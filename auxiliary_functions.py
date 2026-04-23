@@ -1,7 +1,7 @@
 # funciones_auxiliares.py
 
-from src.utilidades.database import comida_basedatos
-from src.utilidades.constantes import GruposComida, DIAS_SEMANA, COMIDAS
+from database import comida_basedatos
+from constantes import GruposComida, DIAS_SEMANA, COMIDAS
 
 comida_bd = comida_basedatos()
 
@@ -83,7 +83,7 @@ def filtrar_comida(comida_bd, tipo, edad):
                     GruposComida.Cereales.PIZZAS[0]  # "AE"
                 }
             ]
-        
+
         case "bebida_desayuno":
             return [
                 i for i, item in enumerate(comida_bd) if item["grupo"].startswith(

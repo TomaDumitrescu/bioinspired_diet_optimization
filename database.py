@@ -32,7 +32,6 @@ def comida_basedatos():
     
     return comida_basedatos
 
-
 def sujetos_basedatos():
     """Obtiene los sujetos de la base de datos junto con sus gustos, disgustos y alergias."""
 
