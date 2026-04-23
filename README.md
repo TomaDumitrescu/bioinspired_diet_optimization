@@ -1,6 +1,6 @@
 # bioinspired_diet_optimization
 
-# Credentials that should not appear in GitHub normally:
+# Credentials (should not appear on GitHub normally):
 export DB_USER='admin'
 export DB_PASSWORD='password'
 export DB_HOST='localhost'
