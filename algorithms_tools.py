@@ -9,10 +9,10 @@ class AlgorithmTools:
         self.user_age = user_age
 
     # Codification
-    def get_codification_structure():
+    def get_codification_structure(self):
         return [0] * 77
 
-    def get_food_type(idx: int):
+    def get_food_type(self, idx: int):
         idx %= 11
         if idx == 0:
             return "bebida_desayuno"
@@ -35,5 +35,12 @@ class AlgorithmTools:
 
         return rand_sol
 
-    def get_day(idx: int):
+    def get_day(self, idx: int):
         return DIAS_SEMANA[int(idx / 11)]
+
+    # Fitness function
+
+# Usage
+# algorithm_tools = AlgorithmTools("genetic", 23)
+# sol = algorithm_tools.get_random_solution()
+# print(traducir_solucion(sol, comida_basedatos()))

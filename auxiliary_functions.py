@@ -20,7 +20,6 @@ def calculo_macronutrientes(proteinas, carbohidratos, grasas):
 
     return porcentaje_proteinas, porcentaje_carbohidratos, porcentaje_grasas
 
-
 def filtrar_comida(comida_bd, tipo, edad):
     """Filtra los alimentos segun el tipo de comida y la edad del usuario."""
 
@@ -46,7 +45,7 @@ def filtrar_comida(comida_bd, tipo, edad):
                     GruposComida.Cereales.PANES[0]  # "AF"
                 }
             ]
-        
+
         case "bebidas":
             bebidas = [
                 i for i, item in enumerate(comida_bd) if item["grupo"].startswith(
@@ -96,7 +95,7 @@ def filtrar_comida(comida_bd, tipo, edad):
                     )
                 )
             ]
-        
+
         case "snacks":
             return [
                 i for i, item in enumerate(comida_bd) if item["grupo"].startswith(
@@ -106,7 +105,6 @@ def filtrar_comida(comida_bd, tipo, edad):
                     )
                 )
             ]
-
 
 def traducir_solucion(solucion, comida_bd):
     """Convierte la solucion de numeros en una lista de alimentos con sus nutrientes"""

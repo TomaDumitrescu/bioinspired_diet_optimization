@@ -16,6 +16,18 @@ def conexion_basedatos():
     }
     return mysql.connector.connect(**config)
 
+def obtenir_comida(id: int):
+    cnx = conexion_basedatos()
+    cursor = cnx.cursor(dictionary=True)
+
+    query = "SELECT * FROM comida WHERE id = \'" + str(id) + "\'"
+    cursor.execute(query)
+    comida = cursor.fetchall()
+
+    cursor.close()
+    cnx.close()
+
+    return comida
 
 def comida_basedatos():
     """Obtiene los datos de la tabla 'comida' y los devuelve como una lista de diccionarios."""
