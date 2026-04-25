@@ -1,7 +1,6 @@
 from constantes import *
 from database import *
 from auxiliary_functions import *
-from random import choice
 
 class AlgorithmTools:
     def __init__(self, type, user_age):
@@ -25,13 +24,13 @@ class AlgorithmTools:
 
         return "almuerzo_cena"
 
-    def get_random_solution(self):
+    def get_random_solution(self, rng):
         rand_sol = []
         for i in range(77):
             food_type = self.get_food_type(i)
             food_bd = comida_basedatos()
             filtered_food = filtrar_comida(food_bd, food_type, self.user_age)
-            rand_sol.append(choice(filtered_food))
+            rand_sol.append(rng.choice(filtered_food))
 
         return rand_sol
 
@@ -129,5 +128,5 @@ class AlgorithmTools:
 
 # Usage
 # algorithm_tools = AlgorithmTools("genetic", 23)
-# sol = algorithm_tools.get_random_solution()
+# sol = algorithm_tools.get_random_solution(rng) --> rng = random.Random()      rng.seed(seed_number)
 # print(traducir_solucion(sol, comida_basedatos()))
