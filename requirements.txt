@@ -1,0 +1,5 @@
+click==8.3.3
+inspyred==1.0.3
+mysql-connector-python==9.6.0
+numpy==2.4.4
+python-dotenv==1.2.2

@@ -1,10 +1,10 @@
-import random
-import inspyred
-
 from constantes import SEEDS
 from database import comida_basedatos, sujetos_basedatos
 from auxiliary_functions import filtrar_comida
 from algorithms_tools import AlgorithmTools
+
+from random import Random
+from inspyred import ec, benchmarks
 
 #generate_population
 #evaluation (fitness) --> stopping criteria
@@ -64,7 +64,7 @@ class GeneticAlgorithm:
 
 
     def run(self, seed):
-        prng = random.Random()
+        prng = Random()
         prng.seed(seed)
 
 
