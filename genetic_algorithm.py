@@ -62,10 +62,51 @@ class GeneticAlgorithm:
             fitness_values.append(score)
         return fitness_values
 
+    #do 2 point crossover (having everything as days)
+    def day_two_point_crossover(self, random, candidates, args):
+        offspring = []
+
+        for i in range(0, len(candidates) - 1, 2):
+            parent1 = candidates[i]
+            parent2 = candidates[i + 1]
+
+            child1 = parent1[:]
+            child2 = parent2[:]
+
+            if random.random() <= self.crossover_rate:
+
+                #crossover points: pick 2 different days to define the swapped segment
+                day1 = random.randint(0, 5)
+                day2 = random.randint(day1 + 1, 6)
+
+                #convert day indices to gene positions (each day = 11 genes)
+                gene_start = day1 * 11
+                gene_end = (day2 + 1) * 11
+
+                #swap the days between the two cut points
+                child1[gene_start:gene_end] = parent2[gene_start:gene_end]
+                child2[gene_start:gene_end] = parent1[gene_start:gene_end]
+
+            offspring.append(child1)
+            offspring.append(child2)
+
+        return offspring
+
+    def swap_mutation(self, random, candidates, args):
+        mutated = []
+
+        return mutated
+
+
+
 
     def run(self, seed):
         prng = Random()
         prng.seed(seed)
+
+        ga = ec.GA(prng)
+        ga.selector = ec.selectors.tournament_selection
+        ga.variator = [self.day_two_point_crossover, self.swap_mutation]
 
 
         
