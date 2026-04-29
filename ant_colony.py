@@ -3,6 +3,7 @@
 import random
 from algorithms_tools import AlgorithmTools
 from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS, DIAS_SEMANA
+from auxiliary_functions import calculo_macronutrientes, filtrar_comida
 
 
 class Ant:
@@ -32,6 +33,8 @@ class Ant:
         
         # Tools for validation and fitness
         self.tools = AlgorithmTools("ant", user_profile["edad"])
+
+        self.reset()
     
     def reset(self):
         """Reset the ant for a new journey"""
@@ -39,6 +42,12 @@ class Ant:
         self.current_position = 0
         self.complete = False
         self.fitness = None
+        
+        # Tracking values for current day
+        self.current_day_cals = 0
+        self.current_day_prot = 0
+        self.current_day_carbs = 0
+        self.current_day_fats = 0
     
     def get_current_food_type(self):
         """
@@ -79,16 +88,29 @@ class Ant:
         
         # Get valid foods list from auxiliary_functions.py
         # This function already filters by type and age
-        from auxiliary_functions import filtrar_comida
         valid_foods = filtrar_comida(self.food_db, food_type_needed, self.user_profile["edad"])
         
         # Check if this food is in the valid list
         return food_index in valid_foods
     
     def add_food(self, food_index):
-        """Add a food to the ant's path and advance position"""
+        """Add a food to the ant's path, advance position, and update macros"""
+        food_item = self.food_db[food_index]
+        
+        self.current_day_cals += food_item["calorias"]
+        self.current_day_prot += food_item["proteinas"]
+        self.current_day_carbs += food_item["carbohidratos"]
+        self.current_day_fats += food_item["grasas"]
+
         self.path.append(food_index)
         self.current_position += 1
+        
+        # Reset daily values when a new day starts
+        if self.current_position % NUM_ALIMENTOS_DIARIO == 0:
+            self.current_day_cals = 0
+            self.current_day_prot = 0
+            self.current_day_carbs = 0
+            self.current_day_fats = 0
         
         if self.current_position >= NUM_DIAS * NUM_ALIMENTOS_DIARIO:  # 77
             self.complete = True
@@ -124,39 +146,36 @@ class Ant:
         return self.path.copy()
 
 
-def get_next_point(current_food_index, allowed_food_indices, pheromone_matrix, heuristic_matrix, alpha, beta, rng):
+def get_next_point(ant, allowed_food_indices, pheromone_matrix, alpha, beta, rng):
     """
-    Probabilistically select the next food item using ACO formula.
-    
-    Parameters:
-    - current_food_index: the food ID just placed (or None if first choice)
-    - allowed_food_indices: list of food indices valid for next position
-    - pheromone_matrix: 2D dict where pheromone[from_food][to_food] = tau
-    - heuristic_matrix: 2D dict where heuristic[from_food][to_food] = eta
-    - alpha: pheromone influence weight (1-3 typical)
-    - beta: heuristic influence weight (2-5 typical)
-    - rng: random number generator
-    
-    Returns: selected food index
+    Probabilistically select the next food item using DYNAMIC ACO formula.
     """
     if not allowed_food_indices:
         return None
     
-    # For the first choice, no previous food exists
-    if current_food_index is None:
-        # Uniform probability for first selection
-        return rng.choice(allowed_food_indices)
+    current_food_index = ant.path[-1] if ant.path else None
+    target_calories = ant.user_profile["calorias"]
+    current_meal_of_day = ant.current_position % NUM_ALIMENTOS_DIARIO
+    meals_left_today = NUM_ALIMENTOS_DIARIO - current_meal_of_day
     
     probabilities = []
     
     for next_food in allowed_food_indices:
-        # Get pheromone level (default 0.1 if not found)
+        food_item = ant.food_db[next_food]
+        
         pheromone = pheromone_matrix.get(current_food_index, {}).get(next_food, 0.1)
         pheromone = pheromone ** alpha
         
-        # Get heuristic value (default 1.0 if not found)
-        heuristic = heuristic_matrix.get(current_food_index, {}).get(next_food, 1.0)
-        heuristic = heuristic ** beta
+        dynamic_eta = calculate_heuristic(
+            food_item=food_item,
+            current_day_cals=ant.current_day_cals,
+            current_day_prot=ant.current_day_prot,
+            current_day_carbs=ant.current_day_carbs,
+            current_day_fats=ant.current_day_fats,
+            target_calories=target_calories,
+            remaining_slots=meals_left_today 
+        )
+        heuristic = dynamic_eta ** beta
         
         prob = pheromone * heuristic
         probabilities.append(prob)
@@ -166,7 +185,6 @@ def get_next_point(current_food_index, allowed_food_indices, pheromone_matrix, h
     if total == 0:
         return rng.choice(allowed_food_indices)
     
-    # Normalize and select
     normalized_probs = [p / total for p in probabilities]
     return rng.choices(allowed_food_indices, weights=normalized_probs, k=1)[0]
 
@@ -188,3 +206,43 @@ def total_cost_function(ant_path, tools, food_db, user_profile):
         user_profile.get("disgustos", [])
     )
     return fitness
+
+def calculate_heuristic(food_item, current_day_cals, current_day_prot, current_day_carbs, current_day_fats, target_calories, remaining_slots):
+    base_score = food_item["base_score"]
+
+    food_cal = food_item["calorias"]
+    new_total_cals = current_day_cals + food_cal
+    
+    if new_total_cals > target_calories * 1.2:
+        return base_score * 0.001 
+        
+    missing_calories = target_calories - current_day_cals
+    
+    safe_remaining = max(1, remaining_slots) 
+    ideal_cals_for_this_meal = missing_calories / safe_remaining
+    calorie_diff = abs(ideal_cals_for_this_meal - food_cal)
+    
+    cal_multiplier = 1000.0 / (50.0 + calorie_diff)
+
+    new_prot = current_day_prot + food_item["proteinas"]
+    new_carbs = current_day_carbs + food_item["carbohidratos"]
+    new_fats = current_day_fats + food_item["grasas"]
+    
+    macro_multiplier = 1.0
+    
+    if new_total_cals > 0:
+        perc_prot, perc_carbs, perc_fats = calculo_macronutrientes(new_prot, new_carbs, new_fats)
+        
+        if 45 <= perc_carbs <= 65: macro_multiplier += 0.5
+        else: macro_multiplier -= 0.2
+            
+        if 20 <= perc_fats <= 35: macro_multiplier += 0.5
+        else: macro_multiplier -= 0.2
+            
+        if 10 <= perc_prot <= 35: macro_multiplier += 0.5
+        else: macro_multiplier -= 0.2
+
+    if macro_multiplier < 0.1:
+        macro_multiplier = 0.1
+
+    return base_score * cal_multiplier * macro_multiplier   
