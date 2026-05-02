@@ -363,8 +363,6 @@ class ACO(AlgorithmTools):
             self.trails_history.append(deepcopy(trails))
             self.best_fitness_history.append(self.best_fitness)
 
-            print("OK")
-
         return self.best_solution
 
 # Testing part - Chat GPT generated
@@ -443,6 +441,91 @@ USER_PROFILES = [
 
 food_db = comida_basedatos()
 
+def get(x, key):
+    return x[key] if isinstance(x, dict) else getattr(x, key)
+
+def match(grupo, grupos):
+    return any(grupo.startswith(g) for g in grupos)
+
+def check_quality(sol, comida_bd, sujeto):
+    assert len(sol) == 77
+
+    total_error = 0
+    cal_bad = macro_bad = allergy_bad = likes = dislikes = 0
+
+    for dia in range(7):
+        alimentos = [comida_bd[int(i)] for i in sol[dia * 11:(dia + 1) * 11]]
+
+        cal = sum(get(a, "calorias") for a in alimentos)
+        p = sum(get(a, "proteinas") for a in alimentos)
+        c = sum(get(a, "carbohidratos") for a in alimentos)
+        f = sum(get(a, "grasas") for a in alimentos)
+
+        kcal_macros = 4 * p + 4 * c + 9 * f
+
+        if kcal_macros == 0:
+            p_pct = c_pct = f_pct = 0
+        else:
+            p_pct = 100 * 4 * p / kcal_macros
+            c_pct = 100 * 4 * c / kcal_macros
+            f_pct = 100 * 9 * f / kcal_macros
+
+        total_error += abs(cal - sujeto["calorias"])
+
+        cal_bad += not (sujeto["calorias_min"] <= cal <= sujeto["calorias_max"])
+        macro_bad += not (45 <= c_pct <= 65)
+        macro_bad += not (20 <= f_pct <= 35)
+        macro_bad += not (10 <= p_pct <= 35)
+
+        for a in alimentos:
+            grupo = get(a, "grupo")
+            allergy_bad += match(grupo, sujeto["alergias"])
+            likes += match(grupo, sujeto["gustos"])
+            dislikes += match(grupo, sujeto["disgustos"])
+
+        print(
+            f"Día {dia + 1}: "
+            f"cal={cal:.1f}, "
+            f"C={c_pct:.1f}%, "
+            f"G={f_pct:.1f}%, "
+            f"P={p_pct:.1f}%"
+        )
+
+    avg_error = total_error / 7
+    hard_violations = cal_bad + macro_bad + allergy_bad
+
+    print("\nQUALITY SUMMARY")
+    print("---------------")
+    print("Average daily calorie error:", round(avg_error, 2))
+    print("Bad calorie days:", cal_bad)
+    print("Macro violations:", macro_bad)
+    print("Allergy violations:", allergy_bad)
+    print("Liked foods used:", likes)
+    print("Disliked foods used:", dislikes)
+
+    if allergy_bad > 0:
+        verdict = "BAD: allergy violation"
+    elif hard_violations > 0:
+        verdict = "INVALID: hard constraints failed"
+    elif avg_error < 150:
+        verdict = "VERY GOOD"
+    elif avg_error < 300:
+        verdict = "GOOD"
+    else:
+        verdict = "VALID, but calories are weak"
+
+    print("Verdict:", verdict)
+
+    return {
+        "avg_calorie_error": avg_error,
+        "bad_calorie_days": cal_bad,
+        "macro_violations": macro_bad,
+        "allergy_violations": allergy_bad,
+        "likes": likes,
+        "dislikes": dislikes,
+        "verdict": verdict,
+    }
+
 def test_aco():
     results = []
     for user_profile in USER_PROFILES:
@@ -452,6 +535,14 @@ def test_aco():
 
         results.append((solution, best_fitness))
 
-    print("Results: ", results)
+    index = 0
+    for solution, best_fitness in results:
+        print("Test 1:")
+        print("Solution: " + str(solution))
+        print("Best fitness: " + str(best_fitness))
+        print("Quality check:")
+        check_quality(solution, food_db, USER_PROFILES[index])
+
+        index += 1
 
 test_aco()
