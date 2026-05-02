@@ -5,7 +5,7 @@ import random
 from algorithms_tools import AlgorithmTools
 from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS, DIAS_SEMANA
 from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_basedatos
-from copy import deepcopy
+import time
 
 class Ant:
     def __init__(self, user_profile, food_db, rng, ant_id, grouped_food):
@@ -144,8 +144,8 @@ class Ant:
         return self.path.copy()
 
     def build_solution(self, pheromone_matrix, alpha, beta):
-        while len(self.get_path_copy()) < 77:
-            index = len(self.get_path_copy())
+        while len(self.path) < 77:
+            index = len(self.path)
             food_type = self.get_current_food_type()
             filtered_food = self.grouped_food[food_type]
 
@@ -171,7 +171,7 @@ class Ant:
         
         for next_food in allowed_food_indices:
             food_item = ant.food_db[next_food]
-            
+
             pheromone = pheromone_matrix.get(next_food, 0.1)
             pheromone = pheromone ** alpha
 
@@ -275,9 +275,7 @@ class ACO(AlgorithmTools):
         # Pheromone initialization
         self.pheromone = None
         self.pheromone_history = []
-        self.trails_history = []
 
-        self.best_fitness_history = []
         self.best_solution = None
         self.best_fitness = float("inf")
 
@@ -285,9 +283,9 @@ class ACO(AlgorithmTools):
         self.pheromone_strength = 100.0
 
         # Filtered food
-        grouped_food = {}
+        self.grouped_food = {}
         for food_type in ["bebida_desayuno", "desayuno", "snacks", "bebidas", "almuerzo_cena"]:
-            grouped_food[food_type] = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
+            self.grouped_food[food_type] = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
 
         # Dynamic ACO
         self.alpha = 1.0
@@ -295,7 +293,7 @@ class ACO(AlgorithmTools):
 
         self.ants = []
         for i in range(num_ants):
-            self.ants.append(Ant(user_profile, food_db, random.Random(random.randint(1, 100)), i, grouped_food))
+            self.ants.append(Ant(user_profile, food_db, random.Random(random.randint(1, 100)), i, self.grouped_food))
 
     def initialize_pheromones(self):
         self.pheromone = []
@@ -318,24 +316,18 @@ class ACO(AlgorithmTools):
         for index in range(len(solution)):
             self.pheromone[index][solution[index]] += amount
 
-    def update_pheromone(self, trails):
+    def update_pheromone(self, tfitnesses, tsolutions):
         self.evaporate_pheromone()
-
-        fitnesses = []
-        solutions = []
-        for trail in trails:
-            fitnesses.append(trail[1])
-            solutions.append(trail[0])
 
         best_index = 0
         min_fitness = float("inf")
-        for index in range(len(fitnesses)):
-            if fitnesses[index] < min_fitness:
-                best_index = index
-                min_fitness = fitnesses[index]
+        for i in range(len(tfitnesses)):
+            if tfitnesses[i] < min_fitness:
+                min_fitness = tfitnesses[i]
+                best_index = i
 
-        best_solution = solutions[best_index]
-        best_fitness = fitnesses[best_index]
+        best_solution = tsolutions[best_index]
+        best_fitness = tfitnesses[best_index]
 
         self.deposit_pheromone(best_solution, best_fitness)
 
@@ -344,33 +336,31 @@ class ACO(AlgorithmTools):
             self.best_solution = best_solution.copy()
 
         self.pheromone_history.append(self.pheromone.copy())
-        self.trails_history.append(best_solution.copy())
-        self.best_fitness_history.append(self.best_fitness)
 
     def aco(self, max_iterations = 100):
         self.initialize_pheromones()
 
         iterations = 0
         while iterations < max_iterations:
-            trails = []
+            tsolutions = []
+            tfitnesses = []
             for i in range(self.num_ants):
                 self.ants[i].reset()
 
                 self.ants[i].build_solution(self.pheromone, self.alpha, self.beta)
+
                 solution = self.ants[i].get_path_copy()
                 fitness = self.ants[i].total_cost_function(solution, self.tools, self.food_db, self.user_profile)
                 iterations += 1
-                trails.append((solution, fitness))
+
+                tsolutions.append(solution)
+                tfitnesses.append(fitness)
 
                 if fitness < self.best_fitness:
                     self.best_solution = solution
                     self.best_fitness = fitness
 
-            self.update_pheromone(trails)
-            self.trails_history.append(deepcopy(trails))
-            self.best_fitness_history.append(self.best_fitness)
-
-            print("OK")
+            self.update_pheromone(tfitnesses, tsolutions)
 
         return self.best_solution
 
