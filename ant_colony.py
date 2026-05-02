@@ -8,7 +8,7 @@ from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_
 from copy import deepcopy
 
 class Ant:
-    def __init__(self, user_profile, food_db, rng, ant_id):
+    def __init__(self, user_profile, food_db, rng, ant_id, grouped_food):
         """
         Parameters:
         - user_profile: dict with keys: 'calorias', 'edad', 'gustos', 'disgustos', 'alergias'
@@ -28,6 +28,9 @@ class Ant:
         
         # Tools for validation and fitness
         self.tools = AlgorithmTools("ant", user_profile["edad"])
+
+        # Filtered food
+        self.grouped_food = grouped_food
 
         self.reset()
 
@@ -144,7 +147,7 @@ class Ant:
         while len(self.get_path_copy()) < 77:
             index = len(self.get_path_copy())
             food_type = self.get_current_food_type()
-            filtered_food = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
+            filtered_food = self.grouped_food[food_type]
 
             next_food = self.get_next_point(self, filtered_food, pheromone_matrix[index], alpha, beta, self.rng)
 
@@ -159,8 +162,7 @@ class Ant:
         """
         if not allowed_food_indices:
             return None
-        
-        current_food_index = ant.path[-1] if ant.path else None
+
         target_calories = ant.user_profile["calorias"]
         current_meal_of_day = ant.current_position % NUM_ALIMENTOS_DIARIO
         meals_left_today = NUM_ALIMENTOS_DIARIO - current_meal_of_day
@@ -277,10 +279,15 @@ class ACO(AlgorithmTools):
 
         self.best_fitness_history = []
         self.best_solution = None
-        self.best_fitness = float("-inf")
+        self.best_fitness = float("inf")
 
         self.evaporation_rate = 0.1
-        self.pheromone_strength = 1.0
+        self.pheromone_strength = 100.0
+
+        # Filtered food
+        grouped_food = {}
+        for food_type in ["bebida_desayuno", "desayuno", "snacks", "bebidas", "almuerzo_cena"]:
+            grouped_food[food_type] = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
 
         # Dynamic ACO
         self.alpha = 1.0
@@ -288,7 +295,7 @@ class ACO(AlgorithmTools):
 
         self.ants = []
         for i in range(num_ants):
-            self.ants.append(Ant(user_profile, food_db, random.Random(random.randint(1, 100)), i))
+            self.ants.append(Ant(user_profile, food_db, random.Random(random.randint(1, 100)), i, grouped_food))
 
     def initialize_pheromones(self):
         self.pheromone = []
@@ -306,7 +313,7 @@ class ACO(AlgorithmTools):
                 self.pheromone[idx][food] *= (1 - self.evaporation_rate)
 
     def deposit_pheromone(self, solution, fitness):
-        amount = self.pheromone_strength * max(fitness, 0.000001)
+        amount = self.pheromone_strength * (1.0 / (1 + max(fitness, 0.000001)))
 
         for index in range(len(solution)):
             self.pheromone[index][solution[index]] += amount
@@ -321,11 +328,11 @@ class ACO(AlgorithmTools):
             solutions.append(trail[0])
 
         best_index = 0
-        max_fitness = float("-inf")
+        min_fitness = float("inf")
         for index in range(len(fitnesses)):
-            if fitnesses[index] > max_fitness:
+            if fitnesses[index] < min_fitness:
                 best_index = index
-                max_fitness = fitnesses[index]
+                min_fitness = fitnesses[index]
 
         best_solution = solutions[best_index]
         best_fitness = fitnesses[best_index]
@@ -355,13 +362,15 @@ class ACO(AlgorithmTools):
                 iterations += 1
                 trails.append((solution, fitness))
 
-                if fitness > self.best_fitness:
+                if fitness < self.best_fitness:
                     self.best_solution = solution
                     self.best_fitness = fitness
 
             self.update_pheromone(trails)
             self.trails_history.append(deepcopy(trails))
             self.best_fitness_history.append(self.best_fitness)
+
+            print("OK")
 
         return self.best_solution
 
@@ -529,7 +538,7 @@ def check_quality(sol, comida_bd, sujeto):
 def test_aco():
     results = []
     for user_profile in USER_PROFILES:
-        aco = ACO(user_profile, food_db, random.Random(42), 5)
+        aco = ACO(user_profile, food_db, random.Random(42), 30)
         solution = aco.aco()
         best_fitness = aco.best_fitness
 
