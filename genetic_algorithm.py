@@ -73,7 +73,7 @@ class GeneticAlgorithm:
             child1 = parent1[:]
             child2 = parent2[:]
 
-            if random.random() <= self.crossover_rate:
+            if random.random() < self.crossover_rate:
 
                 #crossover points: pick 2 different days to define the swapped segment
                 day1 = random.randint(0, 5)
@@ -94,7 +94,13 @@ class GeneticAlgorithm:
 
     def swap_mutation(self, random, candidates, args):
         mutated = []
-
+        for candidate in candidates:
+            mutant = candidate[:]
+            for i in range(len(mutant)):
+                if random.random() < self.mutation_rate:
+                    food_type = self.tools.get_food_type(i)
+                    mutant[i] = random.choice(self.food_pools[food_type])
+            mutated.append(mutant)
         return mutated
 
 
