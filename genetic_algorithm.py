@@ -114,5 +114,23 @@ class GeneticAlgorithm:
         ga.selector = ec.selectors.tournament_selection
         ga.variator = [self.day_two_point_crossover, self.swap_mutation]
 
+        ga.replacer = ec.replacers.generational_replacement
 
-        
+        ga.terminator = [
+            ec.terminators.generation_termination,
+            ec.terminators.average_fitness_termination,
+        ]
+
+        final_pop = ga.evolve(
+            generator=self.generator,
+            evaluator=self.evaluator,
+            pop_size=self.pop_size,
+            maximize=False,
+            num_elites=self.num_elites,
+            max_generations=self.max_generations,
+            tournament_size=self.tournament_size,
+        )
+
+        best = min(final_pop)
+        return best.candidate
+
