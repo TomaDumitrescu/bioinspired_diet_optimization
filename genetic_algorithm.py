@@ -5,6 +5,17 @@ from algorithms_tools import AlgorithmTools
 
 from random import Random
 from inspyred import ec, benchmarks
+import numpy as np
+
+
+def _diversity(population):
+    return np.array([i.candidate for i in population]).std(axis=0).mean()
+
+
+def _fitness_diversity_observer(population, num_generations, num_evaluations, args):
+    best = min(population).fitness
+    args['best_fitness_historic'].append(best)
+    args['diversity_historic'].append(_diversity(population))
 
 #generate_population
 #evaluation (fitness) --> stopping criteria
@@ -113,13 +124,15 @@ class GeneticAlgorithm:
         ga = ec.GA(prng)
         ga.selector = ec.selectors.tournament_selection
         ga.variator = [self.day_two_point_crossover, self.swap_mutation]
-
         ga.replacer = ec.replacers.generational_replacement
-
         ga.terminator = [
             ec.terminators.generation_termination,
             ec.terminators.average_fitness_termination,
         ]
+        ga.observer = [_fitness_diversity_observer, ec.observers.stats_observer]
+
+        best_fitness_historic = []
+        diversity_historic = []
 
         final_pop = ga.evolve(
             generator=self.generator,
@@ -129,8 +142,10 @@ class GeneticAlgorithm:
             num_elites=self.num_elites,
             max_generations=self.max_generations,
             tournament_size=self.tournament_size,
+            best_fitness_historic=best_fitness_historic,
+            diversity_historic=diversity_historic,
         )
 
         best = min(final_pop)
-        return best.candidate
+        return best.candidate, best.fitness, best_fitness_historic, diversity_historic
 
