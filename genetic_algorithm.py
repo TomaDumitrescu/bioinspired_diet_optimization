@@ -13,7 +13,7 @@ def _diversity(population):
 
 
 def _fitness_diversity_observer(population, num_generations, num_evaluations, args):
-    best = min(population).fitness
+    best = max(population).fitness
     args['best_fitness_historic'].append(best)
     args['diversity_historic'].append(_diversity(population))
 
@@ -35,9 +35,9 @@ class GeneticAlgorithm:
         pop_size=100,
         max_generations=200,
         crossover_rate=0.8,
-        mutation_rate=0.05,
-        tournament_size=3,
-        num_elites=1,
+        mutation_rate=0.01,
+        tournament_size=5,
+        num_elites=5,
     ):
         self.user_profile = user_profile
         self.food_db = food_db
@@ -145,7 +145,7 @@ class GeneticAlgorithm:
             best_fitness_historic=best_fitness_historic,
             diversity_historic=diversity_historic,
         )
-
-        best = min(final_pop)
+        #inspyred gets the best (its inverted)
+        best = max(final_pop) 
         return best.candidate, best.fitness, best_fitness_historic, diversity_historic
 
