@@ -126,6 +126,85 @@ class AlgorithmTools:
 
         return max(0, total_fitness)
 
+
+    def calculate_fitness_v3(self, solution, food_db, target_calories, allergies=None, likes=None, dislikes=None):
+        """
+        Same structure as v1 but with positive-baseline preference scoring.
+        Liked = 0, Neutral = +50, Disliked = +100.
+        Preferences are always >= 0 so they can never mask constraint violations.
+        """
+        if allergies is None: allergies = []
+        if likes is None: likes = []
+        if dislikes is None: dislikes = []
+
+        total_fitness = 0
+
+        for day_idx in range(NUM_DIAS):
+            start_idx = day_idx * NUM_ALIMENTOS_DIARIO
+            end_idx = start_idx + NUM_ALIMENTOS_DIARIO
+            daily_genes = solution[start_idx:end_idx]
+
+            daily_calories = 0
+            daily_proteins = 0
+            daily_carbs = 0
+            daily_fats = 0
+            daily_penalties = 0
+
+            for gene in daily_genes:
+                food_item = food_db[gene]
+                group = food_item["grupo"]
+
+                daily_calories += food_item["calorias"]
+                daily_proteins += food_item["proteinas"]
+                daily_carbs += food_item["carbohidratos"]
+                daily_fats += food_item["grasas"]
+
+                # RULE 5: Allergies (Hard constraint -> Massive penalty)
+                if any(group.startswith(a) for a in allergies):
+                    daily_penalties += 10000
+
+                # RULE 6: Preferences — liked=0, neutral=50, disliked=100
+                if any(group.startswith(l) for l in likes):
+                    pass
+                elif any(group.startswith(d) for d in dislikes):
+                    daily_penalties += 100
+                else:
+                    daily_penalties += 50
+
+            calorie_difference = abs(target_calories - daily_calories)
+            total_fitness += calorie_difference
+
+            # RULE 1: Hard calorie limit (80% - 120%)
+            min_calories = target_calories * 0.8
+            max_calories = target_calories * 1.2
+            if daily_calories < min_calories or daily_calories > max_calories:
+                daily_penalties += 5000
+
+            # RULE 2, 3, 4: Macronutrient Limits (Proportional penalties)
+            if daily_calories > 0:
+                perc_protein, perc_carbs, perc_fats = calculo_macronutrientes(
+                    daily_proteins, daily_carbs, daily_fats
+                )
+
+                if perc_carbs < 45:
+                    daily_penalties += (45 - perc_carbs) * 100
+                elif perc_carbs > 65:
+                    daily_penalties += (perc_carbs - 65) * 100
+
+                if perc_fats < 20:
+                    daily_penalties += (20 - perc_fats) * 100
+                elif perc_fats > 35:
+                    daily_penalties += (perc_fats - 35) * 100
+
+                if perc_protein < 10:
+                    daily_penalties += (10 - perc_protein) * 100
+                elif perc_protein > 35:
+                    daily_penalties += (perc_protein - 35) * 100
+
+            total_fitness += daily_penalties
+
+        return total_fitness
+
 # Usage
 # algorithm_tools = AlgorithmTools("genetic", 23)
 # sol = algorithm_tools.get_random_solution(rng) --> rng = random.Random()      rng.seed(seed_number)
