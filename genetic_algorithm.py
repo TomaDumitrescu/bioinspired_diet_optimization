@@ -62,7 +62,7 @@ class GeneticAlgorithm:
     def evaluator(self, candidates, args):
         fitness_values = []
         for candidate in candidates:
-            score = self.tools.calculate_fitness(
+            score = self.tools.calculate_fitness_v3(
                 candidate,
                 self.food_db,
                 self.user_profile["calorias"],
