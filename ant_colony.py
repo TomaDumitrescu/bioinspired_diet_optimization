@@ -242,16 +242,28 @@ class Ant:
             perc_prot, perc_carbs, perc_fats = calculo_macronutrientes(new_prot, new_carbs, new_fats)
             
             if 45 <= perc_carbs <= 65: macro_multiplier += 0.5
-            else: macro_multiplier -= 0.2
+            else:
+                if perc_carbs < 45:
+                    macro_multiplier -= 0.2 + 0.2 * (45 - perc_carbs) / 45.0
+                else:
+                    macro_multiplier -= 0.2 + 0.2 * (perc_carbs - 65) / 35.0
                 
             if 20 <= perc_fats <= 35: macro_multiplier += 0.5
-            else: macro_multiplier -= 0.2
+            else:
+                if perc_fats < 20:
+                    macro_multiplier -= 0.2 + 0.2 * (20 - perc_fats) / 20.0
+                else:
+                    macro_multiplier -= 0.2 + 0.2 * (perc_fats - 35) / 65.0
                 
             if 10 <= perc_prot <= 35: macro_multiplier += 0.5
-            else: macro_multiplier -= 0.2
+            else:
+                if perc_prot < 10:
+                    macro_multiplier -= 0.2 + 0.2 * (10 - perc_prot) / 10.0
+                else:
+                    macro_multiplier -= 0.2 + 0.2 * (perc_prot - 35) / 65.0
 
-        if macro_multiplier < 0.1:
-            macro_multiplier = 0.1
+        if macro_multiplier < 0.05:
+            macro_multiplier = 0.05
 
         return base_score * cal_multiplier * macro_multiplier  
 
