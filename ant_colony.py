@@ -207,6 +207,7 @@ class Ant:
         
         normalized_probs = [p / total for p in probabilities]
         return rng.choices(allowed_food_indices, weights=normalized_probs, k=1)[0]
+
     def calculate_heuristic(self, food_item, current_day_cals, current_day_prot, current_day_carbs, current_day_fats, target_calories, remaining_slots):
         # POPRAWKA: Dynamiczne liczenie Gustów zamiast zera!
         base_score = 1.0
@@ -351,7 +352,6 @@ class ACO(AlgorithmTools):
         if best_fitness < self.best_fitness:
             self.best_fitness = best_fitness
             self.best_solution = best_solution.copy()
-
 
     def aco(self, max_iterations = 20):
         self.initialize_pheromones()
@@ -567,7 +567,7 @@ def test_aco():
 
     index = 0
     for solution, best_fitness in results:
-        print(f"\n{'='*40}\nTEST FOR PATIENT NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
+        print(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
         print("Solution: " + str(solution))
         print("Best fitness: " + str(best_fitness))
         print("Quality check:")
@@ -575,5 +575,4 @@ def test_aco():
 
         index += 1
 
-USER_PROFILES = USER_PROFILES[:1]        
 test_aco()
