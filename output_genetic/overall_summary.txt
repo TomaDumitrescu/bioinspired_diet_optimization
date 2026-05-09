@@ -1,0 +1,6 @@
+
+=== Overall Summary ===
+Passed constraints: 141/155 (91.0%)
+Failed constraints: 14/155 (9.0%)
+Avg liked foods:    18.9%
+Avg disliked foods: 0.2%
