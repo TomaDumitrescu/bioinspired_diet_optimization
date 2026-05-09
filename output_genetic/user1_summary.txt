@@ -1,0 +1,6 @@
+
+=== User 1 Summary ===
+Passed constraints: 28/31 (90.3%)
+Failed constraints: 3/31 (9.7%)
+Avg liked foods:    19.7%
+Avg disliked foods: 0.8%
