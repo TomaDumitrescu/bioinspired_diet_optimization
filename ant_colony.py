@@ -3,10 +3,15 @@
 import random
 
 from algorithms_tools import AlgorithmTools
-from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS, DIAS_SEMANA
+from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS
 from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_basedatos
+from copy import deepcopy
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import List, TextIO
+from itertools import accumulate
 import time
-import copy
 
 class Ant:
     def __init__(self, user_profile, food_db, rng, ant_id, grouped_food):
@@ -140,7 +145,16 @@ class Ant:
             self.fitness = float('inf')
             return self.fitness
         
-        self.fitness = self.tools.calculate_fitness(
+        # self.fitness = self.tools.calculate_fitness(
+        #     self.path,
+        #     self.food_db,
+        #     self.user_profile["calorias"],
+        #     self.user_profile.get("alergias", []),
+        #     self.user_profile.get("gustos", []),
+        #     self.user_profile.get("disgustos", [])
+        # )
+
+        self.fitness = self.tools.calculate_fitness_v3(
             self.path,
             self.food_db,
             self.user_profile["calorias"],
@@ -148,6 +162,7 @@ class Ant:
             self.user_profile.get("gustos", []),
             self.user_profile.get("disgustos", [])
         )
+
         return self.fitness
 
     def get_path_copy(self):
@@ -254,7 +269,7 @@ class Ant:
                     macro_multiplier -= 0.2 + 0.2 * (20 - perc_fats) / 20.0
                 else:
                     macro_multiplier -= 0.2 + 0.2 * (perc_fats - 35) / 65.0
-                
+
             if 10 <= perc_prot <= 35: macro_multiplier += 0.5
             else:
                 if perc_prot < 10:
@@ -323,6 +338,11 @@ class ACO(AlgorithmTools):
         for i in range(num_ants):
             self.ants.append(Ant(user_profile, food_db, random.Random(self.rng.randint(1, 10000)), i, self.grouped_food))
 
+        # Plotting
+        self.pheromone_history = []
+        self.trails_history = []
+        self.best_fitness_history = []
+
     def initialize_pheromones(self):
         self.pheromone = []
 
@@ -347,6 +367,8 @@ class ACO(AlgorithmTools):
             self.pheromone[index][solution[index]] += amount
 
     def update_pheromone(self, tfitnesses, tsolutions):
+        self.pheromone_history.append(self.pheromone.copy())
+
         self.evaporate_pheromone()
 
         best_index = 0
@@ -372,6 +394,8 @@ class ACO(AlgorithmTools):
         while iterations < max_iterations:
             tsolutions = []
             tfitnesses = []
+
+            trails = []
             for i in range(self.num_ants):
                 self.ants[i].reset()
 
@@ -382,12 +406,16 @@ class ACO(AlgorithmTools):
 
                 tsolutions.append(solution)
                 tfitnesses.append(fitness)
+                trails.append((solution, fitness))
 
                 if fitness < self.best_fitness:
                     self.best_solution = solution
                     self.best_fitness = fitness
 
             self.update_pheromone(tfitnesses, tsolutions)
+            self.trails_history.append(deepcopy(trails))
+            self.best_fitness_history.append(self.best_fitness)
+
             iterations += 1
             print(f"\r  [In progress] Iteration {iterations}/{max_iterations}... (Best fitness: {round(self.best_fitness, 2)})", end="", flush=True)
 
@@ -489,7 +517,7 @@ def get(x, key):
 def match(grupo, grupos):
     return any(grupo.startswith(g) for g in grupos)
 
-def check_quality(sol, comida_bd, sujeto):
+def check_quality(sol, comida_bd, sujeto, f: TextIO):
     assert len(sol) == 77
 
     total_error = 0
@@ -525,7 +553,7 @@ def check_quality(sol, comida_bd, sujeto):
             likes += match(grupo, sujeto["gustos"])
             dislikes += match(grupo, sujeto["disgustos"])
 
-        print(
+        f.write(
             f"Día {dia + 1}: "
             f"cal={cal:.1f}, "
             f"C={c_pct:.1f}%, "
@@ -536,14 +564,14 @@ def check_quality(sol, comida_bd, sujeto):
     avg_error = total_error / 7
     hard_violations = cal_bad + macro_bad + allergy_bad
 
-    print("\nQUALITY SUMMARY")
-    print("---------------")
-    print("Average daily calorie error:", round(avg_error, 2))
-    print("Bad calorie days:", cal_bad)
-    print("Macro violations:", macro_bad)
-    print("Allergy violations:", allergy_bad)
-    print("Liked foods used:", likes)
-    print("Disliked foods used:", dislikes)
+    f.write("\nQUALITY SUMMARY")
+    f.write("---------------")
+    f.write("Average daily calorie error:", round(avg_error, 2))
+    f.write("Bad calorie days:", cal_bad)
+    f.write("Macro violations:", macro_bad)
+    f.write("Allergy violations:", allergy_bad)
+    f.write("Liked foods used:", likes)
+    f.write("Disliked foods used:", dislikes)
 
     if allergy_bad > 0:
         verdict = "BAD: allergy violation"
@@ -556,7 +584,7 @@ def check_quality(sol, comida_bd, sujeto):
     else:
         verdict = "VALID, but calories are weak"
 
-    print("Verdict:", verdict)
+    f.write("Verdict:", verdict)
 
     return {
         "avg_calorie_error": avg_error,
@@ -568,23 +596,105 @@ def check_quality(sol, comida_bd, sujeto):
         "verdict": verdict,
     }
 
-def test_aco():
+def stringify_individual(individual: List[int]) -> str:
+    return ''.join([str(int(i)) for i in individual])
+
+def plot_aco_run(aco, index):
+    fitness_plot_fname = f"./output_aco/user_{index + 1}_fitness.png"
+    diversity_plot_fname = f"./output_aco/user_{index + 1}_diversity.png"
+    pheromones_plot_fname = f"./output_aco/user_{index + 1}_pheromones.png"
+    evolution_plot_fname = f"./output_aco/user_{index + 1}_evolution.png"
+
+    # Pheromones
+    sns.heatmap(np.array(aco.pheromone_history), cmap='Oranges', xticklabels=100, yticklabels=100)
+    plt.savefig(pheromones_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # Fitness
+    sns.set_style('darkgrid')
+
+    fitness = np.array([[ant[1] for ant in trails] for trails in aco.trails_history ])
+    best_fitness = np.array(aco.best_fitness_history)
+
+    _, axs = plt.subplots(figsize=(5,5))
+    axs.set_title('Fitness evolution')
+    axs.set_xlabel('Iterations')
+    axs.set_ylabel('Fitness')
+
+    axs.plot(best_fitness, label='best_high')
+
+    median = np.median(fitness, axis=1)
+    min = np.min(fitness, axis=1)
+    max = np.max(fitness, axis=1)
+    axs.plot(median, label='iterations_high')
+    axs.fill_between(np.arange(len(median)), min, max, alpha=0.3, color='orange')
+
+    axs.legend()
+
+    plt.savefig(fitness_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # Population diversity
+    population = np.array([[np.array(ant[0]) for ant in trails] for trails in aco.trails_history ])
+
+    diversity = np.sum(np.std(population, axis=1), axis=1)
+    _, axs = plt.subplots(figsize=(5,5))
+    axs.set_title('Diversity evolution')
+    axs.set_xlabel('Iterations')
+    axs.set_ylabel('Diversity')
+    axs.plot(diversity, color='orange')
+
+    axs.legend()
+
+    plt.savefig(diversity_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # Number of different solutions
+    population = np.array([[np.array(ant[0]) for ant in trails] for trails in aco.trails_history ])
+
+    a = np.apply_along_axis(stringify_individual, 2, population)
+    a = list(accumulate(a, lambda x, y: x.union(set(y)), initial=set()))
+
+    _, axs = plt.subplots(figsize=(5,5))
+    axs.plot([len(x) for x in a], color='orange')
+    axs.set_title('Unique solutions evolution')
+    axs.set_xlabel('Iterations')
+    axs.set_ylabel('Unique solutions')
+
+    plt.savefig(evolution_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+def test_and_plot_aco():
     results = []
+    acos = []
+    run_times = []
     for user_profile in USER_PROFILES:
+        start = time.perf_counter()
         aco = ACO(user_profile, food_db, random.Random(42), 50)
         solution = aco.aco()
         best_fitness = aco.best_fitness
 
         results.append((solution, best_fitness))
+        acos.append(aco)
+        end = time.perf_counter()
+
+        total = end - start
+        run_times.append(total)
 
     index = 0
     for solution, best_fitness in results:
-        print(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
-        print("Solution: " + str(solution))
-        print("Best fitness: " + str(best_fitness))
-        print("Quality check:")
-        check_quality(solution, food_db, USER_PROFILES[index])
+        with open(f"./output_aco/user_{index + 1}.general", "w") as f:
+            f.write(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
+            f.write("Solution: " + str(solution))
+            f.write("Best fitness: " + str(best_fitness))
+            f.write("Quality check:")
+            check_quality(solution, food_db, USER_PROFILES[index], f)
+
+            f.write(f"Performance: {run_times[index]:.6f}")
+
+            aco = acos[index]
+            plot_aco_run(aco, index)
 
         index += 1
 
-test_aco()
+test_and_plot_aco()
