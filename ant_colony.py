@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from typing import List, TextIO
 from itertools import accumulate
 import time
+import pandas as pd
 
 class Ant:
     def __init__(self, user_profile, food_db, rng, ant_id, grouped_food):
@@ -517,7 +518,7 @@ def get(x, key):
 def match(grupo, grupos):
     return any(grupo.startswith(g) for g in grupos)
 
-def check_quality(sol, comida_bd, sujeto, f: TextIO):
+def check_quality(sol, comida_bd, sujeto, fileptr: TextIO):
     assert len(sol) == 77
 
     total_error = 0
@@ -553,25 +554,25 @@ def check_quality(sol, comida_bd, sujeto, f: TextIO):
             likes += match(grupo, sujeto["gustos"])
             dislikes += match(grupo, sujeto["disgustos"])
 
-        f.write(
-            f"Día {dia + 1}: "
-            f"cal={cal:.1f}, "
-            f"C={c_pct:.1f}%, "
-            f"G={f_pct:.1f}%, "
-            f"P={p_pct:.1f}%"
+        fileptr.write(
+            f"Día {dia + 1}: " + "\n" +
+            f"cal={cal:.1f}, " + "\n" +
+            f"C={c_pct:.1f}%, " + "\n" +
+            f"G={f_pct:.1f}%, " + "\n" +
+            f"P={p_pct:.1f}%" + "\n"
         )
 
     avg_error = total_error / 7
     hard_violations = cal_bad + macro_bad + allergy_bad
 
-    f.write("\nQUALITY SUMMARY")
-    f.write("---------------")
-    f.write("Average daily calorie error:", round(avg_error, 2))
-    f.write("Bad calorie days:", cal_bad)
-    f.write("Macro violations:", macro_bad)
-    f.write("Allergy violations:", allergy_bad)
-    f.write("Liked foods used:", likes)
-    f.write("Disliked foods used:", dislikes)
+    fileptr.write("\nQUALITY SUMMARY"+ "\n")
+    fileptr.write("---------------"+ "\n")
+    fileptr.write(f"Average daily calorie error: {round(avg_error, 2)}"+ "\n")
+    fileptr.write(f"Bad calorie days: {cal_bad}"+ "\n")
+    fileptr.write(f"Macro violations: {macro_bad}"+ "\n")
+    fileptr.write(f"Allergy violations: {allergy_bad}"+ "\n")
+    fileptr.write(f"Liked foods used: {likes}"+ "\n")
+    fileptr.write(f"Disliked foods used: {dislikes}"+ "\n")
 
     if allergy_bad > 0:
         verdict = "BAD: allergy violation"
@@ -584,7 +585,7 @@ def check_quality(sol, comida_bd, sujeto, f: TextIO):
     else:
         verdict = "VALID, but calories are weak"
 
-    f.write("Verdict:", verdict)
+    fileptr.write(f"Verdict: {verdict}")
 
     return {
         "avg_calorie_error": avg_error,
@@ -602,13 +603,7 @@ def stringify_individual(individual: List[int]) -> str:
 def plot_aco_run(aco, index):
     fitness_plot_fname = f"./output_aco/user_{index + 1}_fitness.png"
     diversity_plot_fname = f"./output_aco/user_{index + 1}_diversity.png"
-    pheromones_plot_fname = f"./output_aco/user_{index + 1}_pheromones.png"
     evolution_plot_fname = f"./output_aco/user_{index + 1}_evolution.png"
-
-    # Pheromones
-    sns.heatmap(np.array(aco.pheromone_history), cmap='Oranges', xticklabels=100, yticklabels=100)
-    plt.savefig(pheromones_plot_fname, dpi=300, bbox_inches="tight")
-    plt.close()
 
     # Fitness
     sns.set_style('darkgrid')
@@ -664,10 +659,12 @@ def plot_aco_run(aco, index):
     plt.savefig(evolution_plot_fname, dpi=300, bbox_inches="tight")
     plt.close()
 
+USER_PROFILES = USER_PROFILES[:1]
 def test_and_plot_aco():
     results = []
     acos = []
     run_times = []
+
     for user_profile in USER_PROFILES:
         start = time.perf_counter()
         aco = ACO(user_profile, food_db, random.Random(42), 50)
@@ -684,13 +681,13 @@ def test_and_plot_aco():
     index = 0
     for solution, best_fitness in results:
         with open(f"./output_aco/user_{index + 1}.general", "w") as f:
-            f.write(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
-            f.write("Solution: " + str(solution))
-            f.write("Best fitness: " + str(best_fitness))
-            f.write("Quality check:")
+            f.write(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}\n")
+            f.write("Solution: " + str(solution) + "\n")
+            f.write("Best fitness: " + str(best_fitness) + "\n")
+            f.write("Quality check:" + "\n")
             check_quality(solution, food_db, USER_PROFILES[index], f)
 
-            f.write(f"Performance: {run_times[index]:.6f}")
+            f.write(f"Performance: {run_times[index]:.6f}" + "\n")
 
             aco = acos[index]
             plot_aco_run(aco, index)
