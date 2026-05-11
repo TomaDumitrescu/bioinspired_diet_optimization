@@ -659,7 +659,6 @@ def plot_aco_run(aco, index):
     plt.savefig(evolution_plot_fname, dpi=300, bbox_inches="tight")
     plt.close()
 
-USER_PROFILES = USER_PROFILES[:1]
 def test_and_plot_aco():
     results = []
     acos = []
