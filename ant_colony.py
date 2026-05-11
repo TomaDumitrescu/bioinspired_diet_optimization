@@ -585,7 +585,7 @@ def check_quality(sol, comida_bd, sujeto, fileptr: TextIO):
     else:
         verdict = "VALID, but calories are weak"
 
-    fileptr.write(f"Verdict: {verdict}")
+    fileptr.write(f"Verdict: {verdict}"+ "\n")
 
     return {
         "avg_calorie_error": avg_error,
@@ -686,7 +686,7 @@ def test_and_plot_aco():
             f.write("Quality check:" + "\n")
             check_quality(solution, food_db, USER_PROFILES[index], f)
 
-            f.write(f"Performance: {run_times[index]:.6f}" + "\n")
+            f.write(f"Performance: {run_times[index]:.6f}" + "s\n")
 
             aco = acos[index]
             plot_aco_run(aco, index)
