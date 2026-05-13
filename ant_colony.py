@@ -14,8 +14,10 @@ from itertools import accumulate
 import time
 import pandas as pd
 
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+
 class Ant:
-    def __init__(self, user_profile, food_db, rng, ant_id, grouped_food):
+    def __init__(self, user_profile, food_db, rng, ant_id, grouped_food, pheromone_parallel=[]):
         """
         Parameters:
         - user_profile: dict with keys: 'calorias', 'edad', 'gustos', 'disgustos', 'alergias'
@@ -32,6 +34,8 @@ class Ant:
         self.current_position = 0  # 0 to 76 (which meal slot we're filling)
         self.complete = False
         self.fitness = None
+
+        self.pheromone_parallel = pheromone_parallel
         
         # Tools for validation and fitness
         self.tools = AlgorithmTools("ant", user_profile["edad"])
@@ -197,7 +201,7 @@ class Ant:
         
         for next_food in allowed_food_indices:
             food_item = self.food_db[next_food]
-            
+
             # Tu już bezpiecznie odczytujemy feromony
             pheromone = pheromone_matrix[self.current_position].get(next_food, 0.1)
             pheromone = pheromone ** alpha
@@ -392,19 +396,41 @@ class ACO(AlgorithmTools):
         self.initialize_pheromones()
 
         iterations = 0
+
         while iterations < max_iterations:
             tsolutions = []
             tfitnesses = []
 
             trails = []
-            for i in range(self.num_ants):
-                self.ants[i].reset()
 
-                self.ants[i].build_solution(self.pheromone, self.alpha, self.beta)
+            results = []
+            start = time.perf_counter()
+            args = [
+                (
+                    self.ants[i],
+                    self.pheromone,
+                    self.alpha,
+                    self.beta,
+                    self.tools,
+                    self.food_db,
+                    self.user_profile
+                )
+                for i in range(self.num_ants)
+            ]
 
-                solution = self.ants[i].get_path_copy()
-                fitness = self.ants[i].total_cost_function(solution, self.tools, self.food_db, self.user_profile)
+            with ProcessPoolExecutor(max_workers=16) as executor:
+                results = list(
+                    executor.map(
+                        run_ant,
+                        args,
+                        chunksize=3
+                    )
+                )
+            end = time.perf_counter()
+            print(end - start)
 
+            for result in results:
+                solution, fitness = result
                 tsolutions.append(solution)
                 tfitnesses.append(fitness)
                 trails.append((solution, fitness))
@@ -421,6 +447,15 @@ class ACO(AlgorithmTools):
             print(f"\r  [In progress] Iteration {iterations}/{max_iterations}... (Best fitness: {round(self.best_fitness, 2)})", end="", flush=True)
 
         return self.best_solution    
+
+def run_ant(args):
+    ant, pheromone, alpha, beta, tools, food_db, user_profile = args
+    ant.reset()
+    ant.build_solution(pheromone, alpha, beta)
+    solution = ant.get_path_copy()
+    fitness = ant.total_cost_function(solution, tools, food_db, user_profile)
+
+    return (solution, fitness)
 
 # Testing part - Chat GPT generated
 USER_PROFILES = [
@@ -492,22 +527,8 @@ USER_PROFILES = [
         "calorias_max": 1681.56,
         "alergias": ["BA", "BAB", "BAE", "BAH", "BAK", "BAR", "BH"],
         "gustos": ["AM", "JC"],
-        "disgustos": ["MG", "MR"],
-    },
-    {
-        "id": 5,
-        "peso": 72,
-        "altura": 155,
-        "edad": 72,
-        "sexo": "M",
-        "actividad": "Sedentario",
-        "calorias": 1401.30,
-        "calorias_min": 1121.04,
-        "calorias_max": 1681.56,
-        "alergias": [],
-        "gustos": [],
-        "disgustos": [],
-    },
+        "disgustos": ["MG", "MR"]
+    }
 ]
 
 food_db = comida_basedatos()
@@ -658,6 +679,8 @@ def plot_aco_run(aco, index):
 
     plt.savefig(evolution_plot_fname, dpi=300, bbox_inches="tight")
     plt.close()
+
+USER_PROFILES = USER_PROFILES[:1]
 
 def test_and_plot_aco():
     results = []
