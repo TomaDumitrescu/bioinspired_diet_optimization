@@ -8,7 +8,6 @@ import os
 
 OUTPUT_DIR = "output_genetic"
 
-
 def run():
     food_db = comida_basedatos()
     user_profiles = database.sujetos_basedatos()
@@ -75,7 +74,6 @@ def run():
 
     plot_average(all_fitness_historics, all_diversity_historics, "overall_average")
 
-
 def evaluate_solution(best, food_db, user):
     _, datos_dia = traducir_solucion(best, food_db)
 
@@ -116,7 +114,6 @@ def evaluate_solution(best, food_db, user):
     disliked_pct = round(100 * disliked / total, 1) if total else 0
 
     return constraints_ok, liked_pct, disliked_pct
-
 
 def plot_average(fitness_historics, diversity_historics, file_name):
     n = min(len(h) for h in fitness_historics)
