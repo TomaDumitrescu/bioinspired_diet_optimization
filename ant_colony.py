@@ -5,6 +5,7 @@ import random
 from algorithms_tools import AlgorithmTools
 from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS
 from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_basedatos
+from database import sujetos_basedatos
 from copy import deepcopy
 import seaborn as sns
 import numpy as np
@@ -12,9 +13,8 @@ import matplotlib.pyplot as plt
 from typing import List, TextIO
 from itertools import accumulate
 import time
-import pandas as pd
 
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 class Ant:
     def __init__(self, user_profile, food_db, rng, ant_id, grouped_food, pheromone_parallel=[]):
@@ -149,15 +149,6 @@ class Ant:
         if len(self.path) != NUM_DIAS * NUM_ALIMENTOS_DIARIO:
             self.fitness = float('inf')
             return self.fitness
-        
-        # self.fitness = self.tools.calculate_fitness(
-        #     self.path,
-        #     self.food_db,
-        #     self.user_profile["calorias"],
-        #     self.user_profile.get("alergias", []),
-        #     self.user_profile.get("gustos", []),
-        #     self.user_profile.get("disgustos", [])
-        # )
 
         self.fitness = self.tools.calculate_fitness_v3(
             self.path,
@@ -295,7 +286,7 @@ class Ant:
         if len(ant_path) != NUM_DIAS * NUM_ALIMENTOS_DIARIO:
             return float('inf')
         
-        fitness = tools.calculate_fitness(
+        fitness = tools.calculate_fitness_v3(
             ant_path,
             food_db,
             user_profile["calorias"],
@@ -455,80 +446,12 @@ def run_ant(args):
     return (solution, fitness)
 
 # Testing part - Chat GPT generated
-USER_PROFILES = [
-    {
-        "id": 1,
-        "peso": 86,
-        "altura": 180,
-        "edad": 30,
-        "sexo": "H",
-        "actividad": "Alta",
-        "calorias": 2700.00,
-        "calorias_min": 2160.00,
-        "calorias_max": 3240.00,
-        "alergias": [],
-        "gustos": [],
-        "disgustos": [],
-    },
-    {
-        "id": 2,
-        "peso": 60,
-        "altura": 170,
-        "edad": 30,
-        "sexo": "M",
-        "actividad": "Muy Alto",
-        "calorias": 2567.85,
-        "calorias_min": 2054.28,
-        "calorias_max": 3081.42,
-        "alergias": ["A", "AB", "AC", "AD", "AE", "AF", "AG", "AI", "AK", "AM", "AN", "AO", "AP", "AS", "AT"],
-        "gustos": ["BAE", "FC", "FE"],
-        "disgustos": ["C", "CA", "CD", "CDE", "CDH"],
-    },
-    {
-        "id": 3,
-        "peso": 90,
-        "altura": 175,
-        "edad": 40,
-        "sexo": "H",
-        "actividad": "Alto",
-        "calorias": 3102.84,
-        "calorias_min": 2482.27,
-        "calorias_max": 3723.41,
-        "alergias": ["PAC", "PCA", "SNC"],
-        "gustos": ["DAP", "MAC", "SEA"],
-        "disgustos": ["BH", "BJS", "MIG"],
-    },
-    {
-        "id": 4,
-        "peso": 68,
-        "altura": 160,
-        "edad": 55,
-        "sexo": "M",
-        "actividad": "Ligero",
-        "calorias": 1710.50,
-        "calorias_min": 1368.40,
-        "calorias_max": 2052.60,
-        "alergias": ["F", "FA", "FC", "FE"],
-        "gustos": ["AF", "BNH"],
-        "disgustos": ["MB", "QA", "QC"],
-    },
-    {
-        "id": 5,
-        "peso": 72,
-        "altura": 155,
-        "edad": 72,
-        "sexo": "M",
-        "actividad": "Sedentario",
-        "calorias": 1401.30,
-        "calorias_min": 1121.04,
-        "calorias_max": 1681.56,
-        "alergias": ["BA", "BAB", "BAE", "BAH", "BAK", "BAR", "BH"],
-        "gustos": ["AM", "JC"],
-        "disgustos": ["MG", "MR"]
-    }
-]
+USER_PROFILES = sujetos_basedatos()
 
 food_db = comida_basedatos()
+
+tools = AlgorithmTools("aco", USER_PROFILES[0])
+user_profile = USER_PROFILES[0]
 
 def get(x, key):
     return x[key] if isinstance(x, dict) else getattr(x, key)
@@ -536,14 +459,26 @@ def get(x, key):
 def match(grupo, grupos):
     return any(grupo.startswith(g) for g in grupos)
 
-def check_quality(sol, comida_bd, sujeto, fileptr: TextIO):
+from typing import TextIO
+
+def check_quality(sol, comida_bd, sujeto, fileptr: TextIO, calorie_tolerance=150):
     assert len(sol) == 77
 
     total_error = 0
-    cal_bad = macro_bad = allergy_bad = likes = dislikes = 0
+
+    cal_bad = 0
+    macro_bad = 0
+    allergy_bad = 0
+    likes = 0
+    dislikes = 0
+
+    target_calories = sujeto["calorias"]
 
     for dia in range(7):
-        alimentos = [comida_bd[int(i)] for i in sol[dia * 11:(dia + 1) * 11]]
+        start = dia * 11
+        end = (dia + 1) * 11
+
+        alimentos = [comida_bd[int(i)] for i in sol[start:end]]
 
         cal = sum(get(a, "calorias") for a in alimentos)
         p = sum(get(a, "proteinas") for a in alimentos)
@@ -553,44 +488,61 @@ def check_quality(sol, comida_bd, sujeto, fileptr: TextIO):
         kcal_macros = 4 * p + 4 * c + 9 * f
 
         if kcal_macros == 0:
-            p_pct = c_pct = f_pct = 0
+            p_pct = 0
+            c_pct = 0
+            f_pct = 0
         else:
             p_pct = 100 * 4 * p / kcal_macros
             c_pct = 100 * 4 * c / kcal_macros
             f_pct = 100 * 9 * f / kcal_macros
 
-        total_error += abs(cal - sujeto["calorias"])
+        daily_error = abs(cal - target_calories)
+        total_error += daily_error
 
-        cal_bad += not (sujeto["calorias_min"] <= cal <= sujeto["calorias_max"])
-        macro_bad += not (45 <= c_pct <= 65)
-        macro_bad += not (20 <= f_pct <= 35)
-        macro_bad += not (10 <= p_pct <= 35)
+        if daily_error > calorie_tolerance:
+            cal_bad += 1
+
+        if not (45 <= c_pct <= 65):
+            macro_bad += 1
+
+        if not (20 <= f_pct <= 35):
+            macro_bad += 1
+
+        if not (10 <= p_pct <= 35):
+            macro_bad += 1
 
         for a in alimentos:
             grupo = get(a, "grupo")
-            allergy_bad += match(grupo, sujeto["alergias"])
-            likes += match(grupo, sujeto["gustos"])
-            dislikes += match(grupo, sujeto["disgustos"])
 
-        fileptr.write(
-            f"Día {dia + 1}: " + "\n" +
-            f"cal={cal:.1f}, " + "\n" +
-            f"C={c_pct:.1f}%, " + "\n" +
-            f"G={f_pct:.1f}%, " + "\n" +
-            f"P={p_pct:.1f}%" + "\n"
-        )
+            if match(grupo, sujeto["alergias"]):
+                allergy_bad += 1
+
+            if match(grupo, sujeto["gustos"]):
+                likes += 1
+
+            if match(grupo, sujeto["disgustos"]):
+                dislikes += 1
+
+        fileptr.write(f"Día {dia + 1}:\n")
+        fileptr.write(f"cal={cal:.1f}\n")
+        fileptr.write(f"error={daily_error:.1f}\n")
+        fileptr.write(f"C={c_pct:.1f}%\n")
+        fileptr.write(f"G={f_pct:.1f}%\n")
+        fileptr.write(f"P={p_pct:.1f}%\n\n")
 
     avg_error = total_error / 7
     hard_violations = cal_bad + macro_bad + allergy_bad
 
-    fileptr.write("\nQUALITY SUMMARY"+ "\n")
-    fileptr.write("---------------"+ "\n")
-    fileptr.write(f"Average daily calorie error: {round(avg_error, 2)}"+ "\n")
-    fileptr.write(f"Bad calorie days: {cal_bad}"+ "\n")
-    fileptr.write(f"Macro violations: {macro_bad}"+ "\n")
-    fileptr.write(f"Allergy violations: {allergy_bad}"+ "\n")
-    fileptr.write(f"Liked foods used: {likes}"+ "\n")
-    fileptr.write(f"Disliked foods used: {dislikes}"+ "\n")
+    fileptr.write("\nQUALITY SUMMARY\n")
+    fileptr.write("---------------\n")
+    fileptr.write(f"Target calories: {target_calories}\n")
+    fileptr.write(f"Calorie tolerance: ±{calorie_tolerance}\n")
+    fileptr.write(f"Average daily calorie error: {round(avg_error, 2)}\n")
+    fileptr.write(f"Bad calorie days: {cal_bad}\n")
+    fileptr.write(f"Macro violations: {macro_bad}\n")
+    fileptr.write(f"Allergy violations: {allergy_bad}\n")
+    fileptr.write(f"Liked foods used: {likes}\n")
+    fileptr.write(f"Disliked foods used: {dislikes}\n")
 
     if allergy_bad > 0:
         verdict = "BAD: allergy violation"
@@ -603,7 +555,7 @@ def check_quality(sol, comida_bd, sujeto, fileptr: TextIO):
     else:
         verdict = "VALID, but calories are weak"
 
-    fileptr.write(f"Verdict: {verdict}"+ "\n")
+    fileptr.write(f"Verdict: {verdict}\n")
 
     return {
         "avg_calorie_error": avg_error,
