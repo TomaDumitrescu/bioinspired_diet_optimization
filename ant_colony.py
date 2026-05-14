@@ -272,7 +272,6 @@ class Ant:
             return float('inf')
         
         fitness = tools.calculate_fitness_v3(
-        fitness = tools.calculate_fitness_v3(
             ant_path,
             food_db,
             user_profile["calorias"],
