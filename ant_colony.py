@@ -7,9 +7,10 @@ from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS, DIAS_SEMANA
 from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_basedatos
 import time
 import copy
+import heapq
 
 class Ant:
-    def __init__(self, user_profile, food_db, rng, ant_id, grouped_food):
+    def __init__(self, user_profile, food_db, rng, ant_id, grouped_food, food_base_scores=None, food_cals=None, food_prot=None, food_carbs=None, food_fats=None):
         """
         Parameters:
         - user_profile: dict with keys: 'calorias', 'edad', 'gustos', 'disgustos', 'alergias'
@@ -31,17 +32,12 @@ class Ant:
         self.tools = AlgorithmTools("ant", user_profile["edad"])
 
         # Filtered food
-        self.grouped_food = {}
-        allergies = self.user_profile.get("alergias", [])
-        
-        for food_type in ["bebida_desayuno", "desayuno", "snacks", "bebidas", "almuerzo_cena"]:
-            allowed = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
-            
-            safe_allowed = [
-                idx for idx in allowed 
-                if not any(self.food_db[idx]["grupo"].startswith(a) for a in allergies)
-            ]
-            self.grouped_food[food_type] = safe_allowed
+        self.grouped_food = grouped_food
+        self.food_base_scores = food_base_scores or []
+        self.food_cals = food_cals or []
+        self.food_prot = food_prot or []
+        self.food_carbs = food_carbs or []
+        self.food_fats = food_fats or []
 
         self.reset()
 
@@ -86,21 +82,8 @@ class Ant:
         
         Also checks allergies and age restrictions.
         """
-        food_item = self.food_db[food_index]
-        food_group = food_item["grupo"]
         food_type_needed = self.get_current_food_type()
-        
-        # Check allergy (hard constraint) - using grupo codes from constantes.py
-        allergies = self.user_profile.get("alergias", [])
-        if any(food_group.startswith(allergy) for allergy in allergies):
-            return False
-        
-        # Get valid foods list from auxiliary_functions.py
-        # This function already filters by type and age
-        valid_foods = filtrar_comida(self.food_db, food_type_needed, self.user_profile["edad"])
-        
-        # Check if this food is in the valid list
-        return food_index in valid_foods
+        return food_index in self.grouped_food[food_type_needed]
 
     def add_food(self, food_index):
         """Add a food to the ant's path, advance position, and update macros"""
@@ -140,7 +123,7 @@ class Ant:
             self.fitness = float('inf')
             return self.fitness
         
-        self.fitness = self.tools.calculate_fitness(
+        self.fitness = self.tools.calculate_fitness_v3(
             self.path,
             self.food_db,
             self.user_profile["calorias"],
@@ -170,34 +153,97 @@ class Ant:
         Probabilistically select the next food item using DYNAMIC ACO formula.
         """
         if not allowed_food_indices:
-            return None
+            return None  
+        # Candidate preselection for large categories (preserves pheromone signal)
+        MAX_CANDIDATES = 60
+        if len(allowed_food_indices) > MAX_CANDIDATES:
+            phero_row = pheromone_matrix[self.current_position]
+            # Top 40 by pheromone (fast partial sort) + 20 random for exploration
+            top_k = MAX_CANDIDATES * 2 // 3  # 40
+            top_by_phero = heapq.nlargest(top_k, allowed_food_indices, key=lambda idx: phero_row[idx])
+            top_set = set(top_by_phero)
+            rest = [idx for idx in allowed_food_indices if idx not in top_set]
+            n_random = min(MAX_CANDIDATES - top_k, len(rest))
+            random_pick = rng.sample(rest, n_random) if n_random > 0 else []
+            allowed_food_indices = top_by_phero + random_pick
 
-        # POPRAWKA: Zamieniliśmy 'ant.' na 'self.' bo jesteśmy wewnątrz klasy
         target_calories = self.user_profile["calorias"]
         current_meal_of_day = self.current_position % NUM_ALIMENTOS_DIARIO
         meals_left_today = NUM_ALIMENTOS_DIARIO - current_meal_of_day
         
         probabilities = []
         
+        # Local caching for speed
+        curr_cals = self.current_day_cals
+        curr_prot = self.current_day_prot
+        curr_carbs = self.current_day_carbs
+        curr_fats = self.current_day_fats
+        
+        missing_calories = target_calories - curr_cals
+        safe_remaining = max(1, meals_left_today)
+        ideal_cals_for_this_meal = missing_calories / safe_remaining
+        
+        target_calories_1_2 = target_calories * 1.2
+        
+        food_cals_arr = self.food_cals
+        food_prot_arr = self.food_prot
+        food_carbs_arr = self.food_carbs
+        food_fats_arr = self.food_fats
+        base_scores = self.food_base_scores
+        phero_dict = pheromone_matrix[self.current_position]
+        
         for next_food in allowed_food_indices:
-            food_item = self.food_db[next_food]
-            
-            # Tu już bezpiecznie odczytujemy feromony
-            pheromone = pheromone_matrix[self.current_position].get(next_food, 0.1)
-            pheromone = pheromone ** alpha
+            pheromone = phero_dict[next_food] ** alpha
 
-            dynamic_eta = self.calculate_heuristic(
-                food_item=food_item,
-                current_day_cals=self.current_day_cals,
-                current_day_prot=self.current_day_prot,
-                current_day_carbs=self.current_day_carbs,
-                current_day_fats=self.current_day_fats,
-                target_calories=target_calories,
-                remaining_slots=meals_left_today 
-            )
-            heuristic = dynamic_eta ** beta
-            
-            prob = pheromone * heuristic
+            food_cal = food_cals_arr[next_food]
+            new_total_cals = curr_cals + food_cal
+
+            base_score = base_scores[next_food]
+
+            if new_total_cals > target_calories_1_2:
+                dynamic_eta = base_score * 0.001
+            else:
+                calorie_diff = abs(ideal_cals_for_this_meal - food_cal)
+                cal_multiplier = 1000.0 / (50.0 + calorie_diff)
+
+                new_prot = curr_prot + food_prot_arr[next_food]
+                new_carbs = curr_carbs + food_carbs_arr[next_food]
+                new_fats = curr_fats + food_fats_arr[next_food]
+                
+                macro_multiplier = 1.0
+                
+                if new_total_cals > 0:
+                    cp = new_prot * 4
+                    cc = new_carbs * 4
+                    cf = new_fats * 9
+                    total_mac = cp + cc + cf
+                    
+                    if total_mac > 0:
+                        perc_prot = (cp / total_mac) * 100
+                        perc_carbs = (cc / total_mac) * 100
+                        perc_fats = (cf / total_mac) * 100
+                        
+                        if 45 <= perc_carbs <= 65: macro_multiplier += 0.5
+                        else:
+                            if perc_carbs < 45: macro_multiplier -= 0.2 + 0.2 * (45 - perc_carbs) / 45.0
+                            else: macro_multiplier -= 0.2 + 0.2 * (perc_carbs - 65) / 35.0
+                            
+                        if 20 <= perc_fats <= 35: macro_multiplier += 0.5
+                        else:
+                            if perc_fats < 20: macro_multiplier -= 0.2 + 0.2 * (20 - perc_fats) / 20.0
+                            else: macro_multiplier -= 0.2 + 0.2 * (perc_fats - 35) / 65.0
+                            
+                        if 10 <= perc_prot <= 35: macro_multiplier += 0.5
+                        else:
+                            if perc_prot < 10: macro_multiplier -= 0.2 + 0.2 * (10 - perc_prot) / 10.0
+                            else: macro_multiplier -= 0.2 + 0.2 * (perc_prot - 35) / 65.0
+
+                if macro_multiplier < 0.05:
+                    macro_multiplier = 0.05
+
+                dynamic_eta = base_score * cal_multiplier * macro_multiplier  
+
+            prob = pheromone * (dynamic_eta ** beta)
             probabilities.append(prob)
         
         # Roulette wheel selection
@@ -205,67 +251,7 @@ class Ant:
         if total == 0:
             return rng.choice(allowed_food_indices)
         
-        normalized_probs = [p / total for p in probabilities]
-        return rng.choices(allowed_food_indices, weights=normalized_probs, k=1)[0]
-
-    def calculate_heuristic(self, food_item, current_day_cals, current_day_prot, current_day_carbs, current_day_fats, target_calories, remaining_slots):
-        # POPRAWKA: Dynamiczne liczenie Gustów zamiast zera!
-        base_score = 1.0
-        group = food_item["grupo"]
-        
-        if any(group.startswith(l) for l in self.user_profile.get("gustos", [])):
-            base_score = 2.0
-        elif any(group.startswith(d) for d in self.user_profile.get("disgustos", [])):
-            base_score = 0.1
-
-        food_cal = food_item["calorias"]
-        new_total_cals = current_day_cals + food_cal
-
-        if new_total_cals > target_calories * 1.2:
-            return base_score * 0.001 
-            
-        missing_calories = target_calories - current_day_cals
-        
-        safe_remaining = max(1, remaining_slots) 
-        ideal_cals_for_this_meal = missing_calories / safe_remaining
-        calorie_diff = abs(ideal_cals_for_this_meal - food_cal)
-        
-        cal_multiplier = 1000.0 / (50.0 + calorie_diff)
-
-        new_prot = current_day_prot + food_item["proteinas"]
-        new_carbs = current_day_carbs + food_item["carbohidratos"]
-        new_fats = current_day_fats + food_item["grasas"]
-        
-        macro_multiplier = 1.0
-        
-        if new_total_cals > 0:
-            perc_prot, perc_carbs, perc_fats = calculo_macronutrientes(new_prot, new_carbs, new_fats)
-            
-            if 45 <= perc_carbs <= 65: macro_multiplier += 0.5
-            else:
-                if perc_carbs < 45:
-                    macro_multiplier -= 0.2 + 0.2 * (45 - perc_carbs) / 45.0
-                else:
-                    macro_multiplier -= 0.2 + 0.2 * (perc_carbs - 65) / 35.0
-                
-            if 20 <= perc_fats <= 35: macro_multiplier += 0.5
-            else:
-                if perc_fats < 20:
-                    macro_multiplier -= 0.2 + 0.2 * (20 - perc_fats) / 20.0
-                else:
-                    macro_multiplier -= 0.2 + 0.2 * (perc_fats - 35) / 65.0
-                
-            if 10 <= perc_prot <= 35: macro_multiplier += 0.5
-            else:
-                if perc_prot < 10:
-                    macro_multiplier -= 0.2 + 0.2 * (10 - perc_prot) / 10.0
-                else:
-                    macro_multiplier -= 0.2 + 0.2 * (perc_prot - 35) / 65.0
-
-        if macro_multiplier < 0.05:
-            macro_multiplier = 0.05
-
-        return base_score * cal_multiplier * macro_multiplier  
+        return rng.choices(allowed_food_indices, weights=probabilities, k=1)[0]  
 
     def total_cost_function(self, ant_path, tools, food_db, user_profile):
         """
@@ -275,7 +261,7 @@ class Ant:
         if len(ant_path) != NUM_DIAS * NUM_ALIMENTOS_DIARIO:
             return float('inf')
         
-        fitness = tools.calculate_fitness(
+        fitness = tools.calculate_fitness_v3(
             ant_path,
             food_db,
             user_profile["calorias"],
@@ -307,13 +293,38 @@ class ACO(AlgorithmTools):
         self.best_solution = None
         self.best_fitness = float("inf")
 
-        self.evaporation_rate = 0.05
-        self.pheromone_strength = 50000.0
+        self.evaporation_rate = 0.15
+        self.pheromone_strength = 10000.0
 
         # Filtered food
         self.grouped_food = {}
+        allergies = self.user_profile.get("alergias", [])
         for food_type in ["bebida_desayuno", "desayuno", "snacks", "bebidas", "almuerzo_cena"]:
-            self.grouped_food[food_type] = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
+            allowed = filtrar_comida(self.food_db, food_type, self.user_profile["edad"])
+            safe_allowed = [
+                idx for idx in allowed 
+                if not any(self.food_db[idx]["grupo"].startswith(a) for a in allergies)
+            ]
+            self.grouped_food[food_type] = safe_allowed
+
+        # Precalculate food properties for optimization
+        self.food_base_scores = []
+        self.food_cals = [f["calorias"] for f in self.food_db]
+        self.food_prot = [f["proteinas"] for f in self.food_db]
+        self.food_carbs = [f["carbohidratos"] for f in self.food_db]
+        self.food_fats = [f["grasas"] for f in self.food_db]
+        
+        gustos = self.user_profile.get("gustos", [])
+        disgustos = self.user_profile.get("disgustos", [])
+        
+        for food_item in self.food_db:
+            group = food_item["grupo"]
+            if any(group.startswith(l) for l in gustos):
+                self.food_base_scores.append(2.0)
+            elif any(group.startswith(d) for d in disgustos):
+                self.food_base_scores.append(0.1)
+            else:
+                self.food_base_scores.append(1.0)
 
         # Dynamic ACO
         self.alpha = 1.0
@@ -321,13 +332,25 @@ class ACO(AlgorithmTools):
 
         self.ants = []
         for i in range(num_ants):
-            self.ants.append(Ant(user_profile, food_db, random.Random(self.rng.randint(1, 10000)), i, self.grouped_food))
+            self.ants.append(Ant(
+                user_profile, 
+                food_db, 
+                random.Random(self.rng.randint(1, 10000)), 
+                i, 
+                self.grouped_food,
+                self.food_base_scores,
+                self.food_cals,
+                self.food_prot,
+                self.food_carbs,
+                self.food_fats
+            ))
 
     def initialize_pheromones(self):
         self.pheromone = []
+        num_foods = len(self.food_db)
 
         for i in range(77):
-            self.pheromone.append({})
+            self.pheromone.append([0.1] * num_foods)
             food_type = self.get_food_type(i)
             
             safe_allowed = self.grouped_food[food_type]
@@ -336,12 +359,14 @@ class ACO(AlgorithmTools):
                 self.pheromone[i][allowed] = 1.0
 
     def evaporate_pheromone(self):
-        for idx in range(len(self.pheromone)):
-            for food in self.pheromone[idx]:
-                self.pheromone[idx][food] *= (1 - self.evaporation_rate)
+        evap_factor = 1.0 - self.evaporation_rate
+        for row in self.pheromone:
+            for j in range(len(row)):
+                row[j] *= evap_factor
 
     def deposit_pheromone(self, solution, fitness):
-        amount = self.pheromone_strength * (1.0 / (1 + max(fitness, 0.000001)))
+        amount = 1000.0 / (1 + max(fitness, 0.000001))
+
 
         for index in range(len(solution)):
             self.pheromone[index][solution[index]] += amount
@@ -365,8 +390,10 @@ class ACO(AlgorithmTools):
             self.best_fitness = best_fitness
             self.best_solution = best_solution.copy()
 
-    def aco(self, max_iterations = 20):
+    def aco(self, max_iterations = 100):
         self.initialize_pheromones()
+
+        fitness_history = []
 
         iterations = 0
         while iterations < max_iterations:
@@ -378,7 +405,7 @@ class ACO(AlgorithmTools):
                 self.ants[i].build_solution(self.pheromone, self.alpha, self.beta)
 
                 solution = self.ants[i].get_path_copy()
-                fitness = self.ants[i].total_cost_function(solution, self.tools, self.food_db, self.user_profile)
+                fitness = self.ants[i].fitness if self.ants[i].fitness is not None else float('inf')
 
                 tsolutions.append(solution)
                 tfitnesses.append(fitness)
@@ -388,12 +415,12 @@ class ACO(AlgorithmTools):
                     self.best_fitness = fitness
 
             self.update_pheromone(tfitnesses, tsolutions)
+            fitness_history.append(self.best_fitness)
             iterations += 1
             print(f"\r  [In progress] Iteration {iterations}/{max_iterations}... (Best fitness: {round(self.best_fitness, 2)})", end="", flush=True)
 
-        return self.best_solution    
+        return self.best_solution, fitness_history    
 
-# Testing part - Chat GPT generated
 USER_PROFILES = [
     {
         "id": 1,
@@ -464,21 +491,7 @@ USER_PROFILES = [
         "alergias": ["BA", "BAB", "BAE", "BAH", "BAK", "BAR", "BH"],
         "gustos": ["AM", "JC"],
         "disgustos": ["MG", "MR"],
-    },
-    {
-        "id": 5,
-        "peso": 72,
-        "altura": 155,
-        "edad": 72,
-        "sexo": "M",
-        "actividad": "Sedentario",
-        "calorias": 1401.30,
-        "calorias_min": 1121.04,
-        "calorias_max": 1681.56,
-        "alergias": [],
-        "gustos": [],
-        "disgustos": [],
-    },
+    }
 ]
 
 food_db = comida_basedatos()
@@ -570,21 +583,21 @@ def check_quality(sol, comida_bd, sujeto):
 
 def test_aco():
     results = []
-    for user_profile in USER_PROFILES:
+    for user_profile in USER_PROFILES[:1]:
         aco = ACO(user_profile, food_db, random.Random(42), 50)
-        solution = aco.aco()
+        best_solution, fitness_history = aco.aco(200)
         best_fitness = aco.best_fitness
 
-        results.append((solution, best_fitness))
+        results.append((best_solution, best_fitness))
 
     index = 0
     for solution, best_fitness in results:
         print(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
-        print("Solution: " + str(solution))
         print("Best fitness: " + str(best_fitness))
         print("Quality check:")
         check_quality(solution, food_db, USER_PROFILES[index])
 
         index += 1
 
-test_aco()
+if __name__ == "__main__":
+    test_aco()

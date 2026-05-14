@@ -6,6 +6,11 @@ class AlgorithmTools:
     def __init__(self, type, user_age):
         self.type = type
         self.user_age = user_age
+        self._cached_penalties_key_v1 = None
+        self._cached_penalties_v1 = None
+        self._cached_bonuses_v1 = None
+        self._cached_penalties_key_v3 = None
+        self._cached_penalties_v3 = None
 
     # Codification
     def get_codification_structure(self):
@@ -47,6 +52,24 @@ class AlgorithmTools:
         if allergies is None: allergies = []
         if likes is None: likes = []
         if dislikes is None: dislikes = []
+        
+        cache_key = (tuple(allergies), tuple(likes), tuple(dislikes))
+        if self._cached_penalties_key_v1 != cache_key:
+            self._cached_penalties_key_v1 = cache_key
+            self._cached_penalties_v1 = []
+            self._cached_bonuses_v1 = []
+            for item in food_db:
+                group = item["grupo"]
+                penalty = 0
+                bonus = 0
+                if any(group.startswith(a) for a in allergies):
+                    penalty += 10000
+                if any(group.startswith(l) for l in likes):
+                    bonus += 50
+                if any(group.startswith(d) for d in dislikes):
+                    penalty += 50
+                self._cached_penalties_v1.append(penalty)
+                self._cached_bonuses_v1.append(bonus)
 
         total_fitness = 0
 
@@ -68,22 +91,13 @@ class AlgorithmTools:
             for gene in daily_genes:
                 food_item = food_db[gene]
                 
-                group = food_item["grupo"]
-                
                 daily_calories += food_item["calorias"]
                 daily_proteins += food_item["proteinas"]
                 daily_carbs += food_item["carbohidratos"]
                 daily_fats += food_item["grasas"]
 
-                # RULE 5: Allergies (Hard constraint -> Massive penalty)
-                if any(group.startswith(a) for a in allergies):
-                    daily_penalties += 10000
-
-                # RULE 6: User preferences
-                if any(group.startswith(l) for l in likes):
-                    daily_bonuses += 50  # Reward (decreases score)
-                if any(group.startswith(d) for d in dislikes):
-                    daily_penalties += 50  # Penalty (increases score)
+                daily_penalties += self._cached_penalties_v1[gene]
+                daily_bonuses += self._cached_bonuses_v1[gene]
 
             # --- WHOLE DAY EVALUATION ---
 
@@ -137,6 +151,23 @@ class AlgorithmTools:
         if likes is None: likes = []
         if dislikes is None: dislikes = []
 
+        cache_key = (tuple(allergies), tuple(likes), tuple(dislikes))
+        if self._cached_penalties_key_v3 != cache_key:
+            self._cached_penalties_key_v3 = cache_key
+            self._cached_penalties_v3 = []
+            for item in food_db:
+                group = item["grupo"]
+                penalty = 0
+                if any(group.startswith(a) for a in allergies):
+                    penalty += 10000
+                if any(group.startswith(l) for l in likes):
+                    pass
+                elif any(group.startswith(d) for d in dislikes):
+                    penalty += 100
+                else:
+                    penalty += 50
+                self._cached_penalties_v3.append(penalty)
+
         total_fitness = 0
 
         for day_idx in range(NUM_DIAS):
@@ -152,24 +183,13 @@ class AlgorithmTools:
 
             for gene in daily_genes:
                 food_item = food_db[gene]
-                group = food_item["grupo"]
 
                 daily_calories += food_item["calorias"]
                 daily_proteins += food_item["proteinas"]
                 daily_carbs += food_item["carbohidratos"]
                 daily_fats += food_item["grasas"]
 
-                # RULE 5: Allergies (Hard constraint -> Massive penalty)
-                if any(group.startswith(a) for a in allergies):
-                    daily_penalties += 10000
-
-                # RULE 6: Preferences — liked=0, neutral=50, disliked=100
-                if any(group.startswith(l) for l in likes):
-                    pass
-                elif any(group.startswith(d) for d in dislikes):
-                    daily_penalties += 100
-                else:
-                    daily_penalties += 50
+                daily_penalties += self._cached_penalties_v3[gene]
 
             calorie_difference = abs(target_calories - daily_calories)
             total_fitness += calorie_difference

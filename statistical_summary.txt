@@ -1,0 +1,15 @@
+=== STATISTICAL REPORT (Wilcoxon Test + Holm Correction) ===
+Generated: 2026-05-14 04:25:33
+
+  Target Alpha: 0.05 (Family-wise Error Rate controlled by Holm method)
+
+  Profile 1 | GA Med: 3852.0 | ACO Med: 3873.0 | p-corr: 0.00000 -> WINNER: GA 
+  Profile 2 | GA Med: 3166.4 | ACO Med: 2907.0 | p-corr: 0.00000 -> WINNER: ACO
+  Profile 3 | GA Med: 2836.1 | ACO Med: 2488.8 | p-corr: 0.00000 -> WINNER: ACO
+  Profile 4 | GA Med: 3362.0 | ACO Med: 2755.5 | p-corr: 0.00000 -> WINNER: ACO
+  Profile 5 | GA Med: 3202.3 | ACO Med: 2928.1 | p-corr: 0.00000 -> WINNER: ACO
+
+  --- Global Conclusion (Sign Test across Profiles) ---
+  GA won on:  1/5 profiles
+  ACO won on: 4/5 profiles
+  VERDICT: ACO is the superior algorithm globally 
