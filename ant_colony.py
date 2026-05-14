@@ -3,8 +3,15 @@
 import random
 
 from algorithms_tools import AlgorithmTools
-from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS, DIAS_SEMANA
+from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS
 from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_basedatos
+from database import sujetos_basedatos
+from copy import deepcopy
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import List, TextIO
+from itertools import accumulate
 import time
 import copy
 import heapq
@@ -27,6 +34,8 @@ class Ant:
         self.current_position = 0  # 0 to 76 (which meal slot we're filling)
         self.complete = False
         self.fitness = None
+
+        self.pheromone_parallel = pheromone_parallel
         
         # Tools for validation and fitness
         self.tools = AlgorithmTools("ant", user_profile["edad"])
@@ -131,6 +140,7 @@ class Ant:
             self.user_profile.get("gustos", []),
             self.user_profile.get("disgustos", [])
         )
+
         return self.fitness
 
     def get_path_copy(self):
@@ -262,6 +272,7 @@ class Ant:
             return float('inf')
         
         fitness = tools.calculate_fitness_v3(
+        fitness = tools.calculate_fitness_v3(
             ant_path,
             food_db,
             user_profile["calorias"],
@@ -372,6 +383,8 @@ class ACO(AlgorithmTools):
             self.pheromone[index][solution[index]] += amount
 
     def update_pheromone(self, tfitnesses, tsolutions):
+        self.pheromone_history.append(self.pheromone.copy())
+
         self.evaporate_pheromone()
 
         best_index = 0
@@ -396,6 +409,7 @@ class ACO(AlgorithmTools):
         fitness_history = []
 
         iterations = 0
+
         while iterations < max_iterations:
             tsolutions = []
             tfitnesses = []
@@ -409,6 +423,7 @@ class ACO(AlgorithmTools):
 
                 tsolutions.append(solution)
                 tfitnesses.append(fitness)
+                trails.append((solution, fitness))
 
                 if fitness < self.best_fitness:
                     self.best_solution = solution
@@ -496,20 +511,35 @@ USER_PROFILES = [
 
 food_db = comida_basedatos()
 
+tools = AlgorithmTools("aco", USER_PROFILES[0])
+user_profile = USER_PROFILES[0]
+
 def get(x, key):
     return x[key] if isinstance(x, dict) else getattr(x, key)
 
 def match(grupo, grupos):
     return any(grupo.startswith(g) for g in grupos)
 
-def check_quality(sol, comida_bd, sujeto):
+from typing import TextIO
+
+def check_quality(sol, comida_bd, sujeto, fileptr: TextIO, calorie_tolerance=150):
     assert len(sol) == 77
 
     total_error = 0
-    cal_bad = macro_bad = allergy_bad = likes = dislikes = 0
+
+    cal_bad = 0
+    macro_bad = 0
+    allergy_bad = 0
+    likes = 0
+    dislikes = 0
+
+    target_calories = sujeto["calorias"]
 
     for dia in range(7):
-        alimentos = [comida_bd[int(i)] for i in sol[dia * 11:(dia + 1) * 11]]
+        start = dia * 11
+        end = (dia + 1) * 11
+
+        alimentos = [comida_bd[int(i)] for i in sol[start:end]]
 
         cal = sum(get(a, "calorias") for a in alimentos)
         p = sum(get(a, "proteinas") for a in alimentos)
@@ -519,44 +549,61 @@ def check_quality(sol, comida_bd, sujeto):
         kcal_macros = 4 * p + 4 * c + 9 * f
 
         if kcal_macros == 0:
-            p_pct = c_pct = f_pct = 0
+            p_pct = 0
+            c_pct = 0
+            f_pct = 0
         else:
             p_pct = 100 * 4 * p / kcal_macros
             c_pct = 100 * 4 * c / kcal_macros
             f_pct = 100 * 9 * f / kcal_macros
 
-        total_error += abs(cal - sujeto["calorias"])
+        daily_error = abs(cal - target_calories)
+        total_error += daily_error
 
-        cal_bad += not (sujeto["calorias_min"] <= cal <= sujeto["calorias_max"])
-        macro_bad += not (45 <= c_pct <= 65)
-        macro_bad += not (20 <= f_pct <= 35)
-        macro_bad += not (10 <= p_pct <= 35)
+        if daily_error > calorie_tolerance:
+            cal_bad += 1
+
+        if not (45 <= c_pct <= 65):
+            macro_bad += 1
+
+        if not (20 <= f_pct <= 35):
+            macro_bad += 1
+
+        if not (10 <= p_pct <= 35):
+            macro_bad += 1
 
         for a in alimentos:
             grupo = get(a, "grupo")
-            allergy_bad += match(grupo, sujeto["alergias"])
-            likes += match(grupo, sujeto["gustos"])
-            dislikes += match(grupo, sujeto["disgustos"])
 
-        print(
-            f"Día {dia + 1}: "
-            f"cal={cal:.1f}, "
-            f"C={c_pct:.1f}%, "
-            f"G={f_pct:.1f}%, "
-            f"P={p_pct:.1f}%"
-        )
+            if match(grupo, sujeto["alergias"]):
+                allergy_bad += 1
+
+            if match(grupo, sujeto["gustos"]):
+                likes += 1
+
+            if match(grupo, sujeto["disgustos"]):
+                dislikes += 1
+
+        fileptr.write(f"Día {dia + 1}:\n")
+        fileptr.write(f"cal={cal:.1f}\n")
+        fileptr.write(f"error={daily_error:.1f}\n")
+        fileptr.write(f"C={c_pct:.1f}%\n")
+        fileptr.write(f"G={f_pct:.1f}%\n")
+        fileptr.write(f"P={p_pct:.1f}%\n\n")
 
     avg_error = total_error / 7
     hard_violations = cal_bad + macro_bad + allergy_bad
 
-    print("\nQUALITY SUMMARY")
-    print("---------------")
-    print("Average daily calorie error:", round(avg_error, 2))
-    print("Bad calorie days:", cal_bad)
-    print("Macro violations:", macro_bad)
-    print("Allergy violations:", allergy_bad)
-    print("Liked foods used:", likes)
-    print("Disliked foods used:", dislikes)
+    fileptr.write("\nQUALITY SUMMARY\n")
+    fileptr.write("---------------\n")
+    fileptr.write(f"Target calories: {target_calories}\n")
+    fileptr.write(f"Calorie tolerance: ±{calorie_tolerance}\n")
+    fileptr.write(f"Average daily calorie error: {round(avg_error, 2)}\n")
+    fileptr.write(f"Bad calorie days: {cal_bad}\n")
+    fileptr.write(f"Macro violations: {macro_bad}\n")
+    fileptr.write(f"Allergy violations: {allergy_bad}\n")
+    fileptr.write(f"Liked foods used: {likes}\n")
+    fileptr.write(f"Disliked foods used: {dislikes}\n")
 
     if allergy_bad > 0:
         verdict = "BAD: allergy violation"
@@ -569,7 +616,7 @@ def check_quality(sol, comida_bd, sujeto):
     else:
         verdict = "VALID, but calories are weak"
 
-    print("Verdict:", verdict)
+    fileptr.write(f"Verdict: {verdict}\n")
 
     return {
         "avg_calorie_error": avg_error,
@@ -581,7 +628,69 @@ def check_quality(sol, comida_bd, sujeto):
         "verdict": verdict,
     }
 
-def test_aco():
+def stringify_individual(individual: List[int]) -> str:
+    return ''.join([str(int(i)) for i in individual])
+
+def plot_aco_run(aco, index):
+    fitness_plot_fname = f"./output_aco/user_{index + 1}_fitness.png"
+    diversity_plot_fname = f"./output_aco/user_{index + 1}_diversity.png"
+    evolution_plot_fname = f"./output_aco/user_{index + 1}_evolution.png"
+
+    # Fitness
+    sns.set_style('darkgrid')
+
+    fitness = np.array([[ant[1] for ant in trails] for trails in aco.trails_history ])
+    best_fitness = np.array(aco.best_fitness_history)
+
+    _, axs = plt.subplots(figsize=(5,5))
+    axs.set_title('Fitness evolution')
+    axs.set_xlabel('Iterations')
+    axs.set_ylabel('Fitness')
+
+    axs.plot(best_fitness, label='best_high')
+
+    median = np.median(fitness, axis=1)
+    min = np.min(fitness, axis=1)
+    max = np.max(fitness, axis=1)
+    axs.plot(median, label='iterations_high')
+    axs.fill_between(np.arange(len(median)), min, max, alpha=0.3, color='orange')
+
+    axs.legend()
+
+    plt.savefig(fitness_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # Population diversity
+    population = np.array([[np.array(ant[0]) for ant in trails] for trails in aco.trails_history ])
+
+    diversity = np.sum(np.std(population, axis=1), axis=1)
+    _, axs = plt.subplots(figsize=(5,5))
+    axs.set_title('Diversity evolution')
+    axs.set_xlabel('Iterations')
+    axs.set_ylabel('Diversity')
+    axs.plot(diversity, color='orange')
+
+    axs.legend()
+
+    plt.savefig(diversity_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # Number of different solutions
+    population = np.array([[np.array(ant[0]) for ant in trails] for trails in aco.trails_history ])
+
+    a = np.apply_along_axis(stringify_individual, 2, population)
+    a = list(accumulate(a, lambda x, y: x.union(set(y)), initial=set()))
+
+    _, axs = plt.subplots(figsize=(5,5))
+    axs.plot([len(x) for x in a], color='orange')
+    axs.set_title('Unique solutions evolution')
+    axs.set_xlabel('Iterations')
+    axs.set_ylabel('Unique solutions')
+
+    plt.savefig(evolution_plot_fname, dpi=300, bbox_inches="tight")
+    plt.close()
+
+def test_and_plot_aco():
     results = []
     for user_profile in USER_PROFILES[:1]:
         aco = ACO(user_profile, food_db, random.Random(42), 50)
