@@ -15,7 +15,7 @@ import heapq
 from copy import deepcopy
 
 from concurrent.futures import ProcessPoolExecutor
-
+food_db = comida_basedatos()
 class Ant:
     def __init__(self, user_profile, food_db, rng, ant_id, grouped_food, food_base_scores=None, food_cals=None, food_prot=None, food_carbs=None, food_fats=None):
         """
@@ -406,6 +406,7 @@ class ACO(AlgorithmTools):
 
         iterations = 0
         self.best_fitness_history = []
+        calories = []
         while iterations < max_iterations:
             tsolutions = []
             tfitnesses = []
@@ -450,10 +451,22 @@ class ACO(AlgorithmTools):
             self.trails_history.append(deepcopy(trails))
             self.best_fitness_history.append(self.best_fitness)
 
+            average_day_calories = 0.0
+            for solution in tsolutions:
+                total_day_calories = 0.0
+                for id_food in solution:
+                    comida = food_db[id_food]
+                    total_day_calories += float(comida["calorias"])
+                total_day_calories = 1.0 * total_day_calories / 7
+                average_day_calories += total_day_calories
+
+            average_day_calories = 1.0 * average_day_calories / len(tsolutions)
+            calories.append(average_day_calories)
+
             iterations += 1
             print(f"\r  [In progress] Iteration {iterations}/{max_iterations}... (Best fitness: {round(self.best_fitness, 2)})", end="", flush=True)
 
-        return self.best_solution
+        return self.best_solution, calories
 
 def run_ant(args):
     ant, pheromone, alpha, beta, tools, food_db, user_profile = args
@@ -538,7 +551,7 @@ USER_PROFILES = [
 ]
 
 
-food_db = comida_basedatos()
+
 
 tools = AlgorithmTools("aco", USER_PROFILES[0])
 user_profile = USER_PROFILES[0]
@@ -660,10 +673,22 @@ def check_quality(sol, comida_bd, sujeto, fileptr: TextIO, calorie_tolerance=150
 def stringify_individual(individual: List[int]) -> str:
     return ''.join([str(int(i)) for i in individual])
 
-def plot_aco_run(aco, index):
+def plot_aco_run(aco, index, calories):
     fitness_plot_fname = f"./output_aco/user_{index + 1}_fitness.png"
     diversity_plot_fname = f"./output_aco/user_{index + 1}_diversity.png"
     evolution_plot_fname = f"./output_aco/user_{index + 1}_evolution.png"
+    calories_plot_fname = f"./output_aco/calories_{index + 1}_plot.png"
+
+    iterations = range(1, len(calories) + 1)
+
+    plt.plot(iterations, calories, marker='o')
+    plt.xlabel("Iteration")
+    plt.ylabel("Calories")
+    plt.title("Calories per Iteration")
+    plt.grid(True)
+
+    plt.savefig(calories_plot_fname, dpi=300, bbox_inches="tight")
+    plt.show()
 
     # Fitness
     sns.set_style('darkgrid')
@@ -726,7 +751,7 @@ def test_and_plot_aco():
     for user_profile in USER_PROFILES:
         start = time.perf_counter()
         aco = ACO(user_profile, food_db, random.Random(42), 60)
-        aco.aco(200)
+        _, calories = aco.aco(200)
         best_solution = aco.best_solution
         best_fitness = aco.best_fitness
 
@@ -749,7 +774,7 @@ def test_and_plot_aco():
             f.write(f"Performance: {run_times[index]:.6f}" + "s\n")
 
             aco = acos[index]
-            plot_aco_run(aco, index)
+            plot_aco_run(aco, index, calories)
 
         index += 1
 
