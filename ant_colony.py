@@ -4,19 +4,17 @@ import random
 
 from algorithms_tools import AlgorithmTools
 from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS
-from auxiliary_functions import calculo_macronutrientes, filtrar_comida, comida_basedatos
+from auxiliary_functions import filtrar_comida, comida_basedatos
 from database import sujetos_basedatos
-from copy import deepcopy
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, TextIO
 from itertools import accumulate
 import time
-import copy
 import heapq
 
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 class Ant:
     def __init__(self, user_profile, food_db, rng, ant_id, grouped_food, food_base_scores=None, food_cals=None, food_prot=None, food_carbs=None, food_fats=None):
@@ -463,78 +461,7 @@ def run_ant(args):
 
     return (solution, fitness)
 
-USER_PROFILES = [
-    {
-        "id": 1,
-        "peso": 86,
-        "altura": 180,
-        "edad": 30,
-        "sexo": "H",
-        "actividad": "Alta",
-        "calorias": 2700.00,
-        "calorias_min": 2160.00,
-        "calorias_max": 3240.00,
-        "alergias": [],
-        "gustos": [],
-        "disgustos": [],
-    },
-    {
-        "id": 2,
-        "peso": 60,
-        "altura": 170,
-        "edad": 30,
-        "sexo": "M",
-        "actividad": "Muy Alto",
-        "calorias": 2567.85,
-        "calorias_min": 2054.28,
-        "calorias_max": 3081.42,
-        "alergias": ["A", "AB", "AC", "AD", "AE", "AF", "AG", "AI", "AK", "AM", "AN", "AO", "AP", "AS", "AT"],
-        "gustos": ["BAE", "FC", "FE"],
-        "disgustos": ["C", "CA", "CD", "CDE", "CDH"],
-    },
-    {
-        "id": 3,
-        "peso": 90,
-        "altura": 175,
-        "edad": 40,
-        "sexo": "H",
-        "actividad": "Alto",
-        "calorias": 3102.84,
-        "calorias_min": 2482.27,
-        "calorias_max": 3723.41,
-        "alergias": ["PAC", "PCA", "SNC"],
-        "gustos": ["DAP", "MAC", "SEA"],
-        "disgustos": ["BH", "BJS", "MIG"],
-    },
-    {
-        "id": 4,
-        "peso": 68,
-        "altura": 160,
-        "edad": 55,
-        "sexo": "M",
-        "actividad": "Ligero",
-        "calorias": 1710.50,
-        "calorias_min": 1368.40,
-        "calorias_max": 2052.60,
-        "alergias": ["F", "FA", "FC", "FE"],
-        "gustos": ["AF", "BNH"],
-        "disgustos": ["MB", "QA", "QC"],
-    },
-    {
-        "id": 5,
-        "peso": 72,
-        "altura": 155,
-        "edad": 72,
-        "sexo": "M",
-        "actividad": "Sedentario",
-        "calorias": 1401.30,
-        "calorias_min": 1121.04,
-        "calorias_max": 1681.56,
-        "alergias": ["BA", "BAB", "BAE", "BAH", "BAK", "BAR", "BH"],
-        "gustos": ["AM", "JC"],
-        "disgustos": ["MG", "MR"],
-    }
-]
+USER_PROFILES = sujetos_basedatos()
 
 food_db = comida_basedatos()
 
@@ -719,19 +646,35 @@ def plot_aco_run(aco, index):
 
 def test_and_plot_aco():
     results = []
-    for user_profile in USER_PROFILES[:1]:
+    acos = []
+    run_times = []
+    for user_profile in USER_PROFILES:
+        start = time.perf_counter()
         aco = ACO(user_profile, food_db, random.Random(42), 50)
-        best_solution, fitness_history = aco.aco(200)
+        aco.aco(200)
+        best_solution = aco.best_solution
         best_fitness = aco.best_fitness
 
         results.append((best_solution, best_fitness))
+        acos.append(aco)
+        end = time.perf_counter()
+
+        total = end - start
+        run_times.append(total)
 
     index = 0
     for solution, best_fitness in results:
-        print(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}")
-        print("Best fitness: " + str(best_fitness))
-        print("Quality check:")
-        check_quality(solution, food_db, USER_PROFILES[index])
+        with open(f"./output_aco/user_{index + 1}.general", "w") as f:
+            f.write(f"\n{'='*40}\nTEST FOR USER NR {index + 1} (Cel: {USER_PROFILES[index]['calorias']} kcal)\n{'='*40}\n")
+            f.write("Solution: " + str(solution) + "\n")
+            f.write("Best fitness: " + str(best_fitness) + "\n")
+            f.write("Quality check:" + "\n")
+            check_quality(solution, food_db, USER_PROFILES[index], f)
+
+            f.write(f"Performance: {run_times[index]:.6f}" + "s\n")
+
+            aco = acos[index]
+            plot_aco_run(aco, index)
 
         index += 1
 
