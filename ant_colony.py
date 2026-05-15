@@ -5,7 +5,6 @@ import random
 from algorithms_tools import AlgorithmTools
 from constantes import NUM_ALIMENTOS_DIARIO, NUM_DIAS
 from auxiliary_functions import filtrar_comida, comida_basedatos
-from database import sujetos_basedatos
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,6 +12,7 @@ from typing import List, TextIO
 from itertools import accumulate
 import time
 import heapq
+from copy import deepcopy
 
 from concurrent.futures import ProcessPoolExecutor
 
@@ -338,6 +338,9 @@ class ACO(AlgorithmTools):
         self.alpha = 1.0
         self.beta = 2.0
 
+        self.trails_history = []
+        self.best_fitness_history = []
+
         self.ants = []
         for i in range(num_ants):
             self.ants.append(Ant(
@@ -401,14 +404,12 @@ class ACO(AlgorithmTools):
     def aco(self, max_iterations = 100):
         self.initialize_pheromones()
 
-        fitness_history = []
-
         iterations = 0
-        trails = []
-
+        self.best_fitness_history = []
         while iterations < max_iterations:
             tsolutions = []
             tfitnesses = []
+            trails = []
 
             start = time.perf_counter()
             args = [
@@ -446,11 +447,13 @@ class ACO(AlgorithmTools):
                     self.best_fitness = fitness
 
             self.update_pheromone(tfitnesses, tsolutions)
-            fitness_history.append(self.best_fitness)
+            self.trails_history.append(deepcopy(trails))
+            self.best_fitness_history.append(self.best_fitness)
+
             iterations += 1
             print(f"\r  [In progress] Iteration {iterations}/{max_iterations}... (Best fitness: {round(self.best_fitness, 2)})", end="", flush=True)
 
-        return self.best_solution, fitness_history   
+        return self.best_solution
 
 def run_ant(args):
     ant, pheromone, alpha, beta, tools, food_db, user_profile = args
@@ -461,7 +464,79 @@ def run_ant(args):
 
     return (solution, fitness)
 
-USER_PROFILES = sujetos_basedatos()
+USER_PROFILES = [
+    {
+        "id": 1,
+        "peso": 86,
+        "altura": 180,
+        "edad": 30,
+        "sexo": "H",
+        "actividad": "Alta",
+        "calorias": 2700.00,
+        "calorias_min": 2160.00,
+        "calorias_max": 3240.00,
+        "alergias": [],
+        "gustos": [],
+        "disgustos": [],
+    },
+    {
+        "id": 2,
+        "peso": 60,
+        "altura": 170,
+        "edad": 30,
+        "sexo": "M",
+        "actividad": "Muy Alto",
+        "calorias": 2567.85,
+        "calorias_min": 2054.28,
+        "calorias_max": 3081.42,
+        "alergias": ["A", "AB", "AC", "AD", "AE", "AF", "AG", "AI", "AK", "AM", "AN", "AO", "AP", "AS", "AT"],
+        "gustos": ["BAE", "FC", "FE"],
+        "disgustos": ["C", "CA", "CD", "CDE", "CDH"],
+    },
+    {
+        "id": 3,
+        "peso": 90,
+        "altura": 175,
+        "edad": 40,
+        "sexo": "H",
+        "actividad": "Alto",
+        "calorias": 3102.84,
+        "calorias_min": 2482.27,
+        "calorias_max": 3723.41,
+        "alergias": ["PAC", "PCA", "SNC"],
+        "gustos": ["DAP", "MAC", "SEA"],
+        "disgustos": ["BH", "BJS", "MIG"],
+    },
+    {
+        "id": 4,
+        "peso": 68,
+        "altura": 160,
+        "edad": 55,
+        "sexo": "M",
+        "actividad": "Ligero",
+        "calorias": 1710.50,
+        "calorias_min": 1368.40,
+        "calorias_max": 2052.60,
+        "alergias": ["F", "FA", "FC", "FE"],
+        "gustos": ["AF", "BNH"],
+        "disgustos": ["MB", "QA", "QC"],
+    },
+    {
+        "id": 5,
+        "peso": 72,
+        "altura": 155,
+        "edad": 72,
+        "sexo": "M",
+        "actividad": "Sedentario",
+        "calorias": 1401.30,
+        "calorias_min": 1121.04,
+        "calorias_max": 1681.56,
+        "alergias": ["BA", "BAB", "BAE", "BAH", "BAK", "BAR", "BH"],
+        "gustos": ["AM", "JC"],
+        "disgustos": ["MG", "MR"],
+    }
+]
+
 
 food_db = comida_basedatos()
 
@@ -650,7 +725,7 @@ def test_and_plot_aco():
     run_times = []
     for user_profile in USER_PROFILES:
         start = time.perf_counter()
-        aco = ACO(user_profile, food_db, random.Random(42), 50)
+        aco = ACO(user_profile, food_db, random.Random(42), 60)
         aco.aco(200)
         best_solution = aco.best_solution
         best_fitness = aco.best_fitness
