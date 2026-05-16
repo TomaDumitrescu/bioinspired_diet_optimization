@@ -550,9 +550,6 @@ USER_PROFILES = [
     }
 ]
 
-
-
-
 tools = AlgorithmTools("aco", USER_PROFILES[0])
 user_profile = USER_PROFILES[0]
 
@@ -748,10 +745,12 @@ def test_and_plot_aco():
     results = []
     acos = []
     run_times = []
+    calories_arr=[]
     for user_profile in USER_PROFILES:
         start = time.perf_counter()
         aco = ACO(user_profile, food_db, random.Random(42), 60)
         _, calories = aco.aco(200)
+        calories_arr.append(calories)
         best_solution = aco.best_solution
         best_fitness = aco.best_fitness
 
@@ -774,7 +773,7 @@ def test_and_plot_aco():
             f.write(f"Performance: {run_times[index]:.6f}" + "s\n")
 
             aco = acos[index]
-            plot_aco_run(aco, index, calories)
+            plot_aco_run(aco, index, calories_arr[index])
 
         index += 1
 
